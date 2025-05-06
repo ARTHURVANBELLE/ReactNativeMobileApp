@@ -3,11 +3,12 @@ import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EventGallery } from '@/components/Index/event_gallery';
 import { useThemeColor } from '@/hooks/useThemeColor';
+import ContactSection from '@/components/Index/contact';
 
 
 export default function HomeScreen() {
   const queryClient = useQueryClient();
-  const textColor = useThemeColor({ light: '#FFFFFF', dark: '#FFFFFF' }, 'text');
+  const textColor = useThemeColor({ light: '#000000', dark: '#FFFFFF' }, 'text');
 
 
   const pokemons = useQuery({
@@ -61,12 +62,12 @@ export default function HomeScreen() {
 
   return (
     <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
+    headerBackgroundColor={{ light: '#FFFFFF', dark: '#000000' }}
+    headerImage={
         <View style={styles.headerContainer}>
           <Image
             source={require('@/assets/images/large_peloton.jpg')}
-            style={styles.reactLogo}
+            style={styles.imageTop}
             resizeMode="cover"
           />
           <View style={styles.overlayContainer}>
@@ -81,12 +82,17 @@ export default function HomeScreen() {
         events={cyclingEvents} 
         title="Upcoming Cycling Events" 
       />
+      <ContactSection></ContactSection>
 
     </ParallaxScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  contentContainer: {
+    paddingTop: 0, // Remove top padding
+    borderTopWidth: 0, // Remove top border
+  },
   titleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -98,12 +104,12 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     position: 'relative',
-    height: 178,
+    height: 300,
     width: Dimensions.get('window').width,
   },
-  reactLogo: {
+  imageTop: {
     width: Dimensions.get('window').width,
-    height: 178,
+    height: 300,
     position: 'absolute',
     left: 0,
     top: 0,

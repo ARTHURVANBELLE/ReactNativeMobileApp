@@ -100,6 +100,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     borderRadius: 12,
+    marginTop: 0,
   },
   galleryTitle: {
     fontSize: 24,
