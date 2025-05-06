@@ -1,23 +1,22 @@
-import { Image, StyleSheet, Platform } from 'react-native';
+import { Image, StyleSheet, Platform, Dimensions } from 'react-native';
 
-import { HelloWave } from '@/components/HelloWave';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 
 export default function HomeScreen() {
   return (
-    <ParallaxScrollView
+<ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
       headerImage={
         <Image
-          source={require('@/assets/images/partial-react-logo.png')}
+          source={require('@/assets/images/large_peloton.jpg')}
           style={styles.reactLogo}
+          resizeMode="cover"
         />
       }>
       <ThemedView style={styles.titleContainer}>
         <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
       </ThemedView>
       <ThemedView style={styles.stepContainer}>
         <ThemedText type="subtitle">Step 1: Try it</ThemedText>
@@ -65,10 +64,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   reactLogo: {
+    width: Dimensions.get('window').width,
     height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
     position: 'absolute',
+    left: 0,
+    top: '50%',
+    transform: [{ translateY: -89 }], // Half the height to center vertically
   },
 });
