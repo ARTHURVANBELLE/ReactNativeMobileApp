@@ -4,13 +4,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EventGallery } from '@/components/Index/event_gallery';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import ContactSection from '@/components/Index/contact';
+import Constants from 'expo-constants';
 
 
 export default function HomeScreen() {
   const queryClient = useQueryClient();
   const textColor = useThemeColor({ light: '#000000', dark: '#FFFFFF' }, 'text');
-
-
+  
+  // Access environment variables through Constants.expoConfig.extra
+  const helloValue = Constants.expoConfig?.extra?.REACT_APP_HELLO || 'Not found';
+  
   const pokemons = useQuery({
     queryKey: ['getPokemon'],
     queryFn: async () => {
@@ -18,6 +21,8 @@ export default function HomeScreen() {
       const data = await response.json();
 
       console.log('data', data);
+      console.log('NODE_ENV:', process.env.NODE_ENV);
+      console.log('REACT_APP_HELLO via Constants:', helloValue);
       return data.results as {name: string; url: string}[];
     }
   });
@@ -73,6 +78,7 @@ export default function HomeScreen() {
           <View style={styles.overlayContainer}>
             <Text style={[styles.heroTitle, { color: textColor }]}>Blanmont cyclo club</Text>
             <Text style={[styles.heroSubtitle, { color: textColor }]}>Club de vélo de route en Brabant wallon</Text>
+            <Text style={[styles.heroSubtitle, { color: textColor }]}>Hello: {helloValue}</Text>
           </View>
         </View>
       }>
