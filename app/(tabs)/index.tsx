@@ -1,18 +1,55 @@
-import { Image, StyleSheet, Platform, Dimensions, View, Text } from 'react-native';
+import { Image, StyleSheet, Platform, Dimensions, View, Text, ScrollView } from 'react-native';
+import React, { useEffect, useState } from 'react';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EventGallery } from '@/components/Index/event_gallery';
 import { useThemeColor } from '@/hooks/useThemeColor';
 import ContactSection from '@/components/Index/contact';
-import Constants from 'expo-constants';
-
+import { getCurrentUser, loadAuthState } from '@/utils/session';
+import { getStorageItem } from '@/utils/storage';
 
 export default function HomeScreen() {
   const queryClient = useQueryClient();
   const textColor = useThemeColor({ light: '#000000', dark: '#FFFFFF' }, 'text');
-  
+  const [sessionData, setSessionData] = useState<{
+    user: any | null;
+    accessToken: string | null;
+    refreshToken: string | null;
+    expiresAt: string | null;
+  }>({
+    user: null,
+    accessToken: null,
+    refreshToken: null,
+    expiresAt: null,
+  });
+
+  // Fetch and display session data
+  useEffect(() => {
+    const fetchSessionData = async () => {
+      try {
+        // Load user data
+        const user = await getCurrentUser();
+        
+        // Load token data directly from storage for display
+        const accessToken = await getStorageItem('strava_access_token');
+        const refreshToken = await getStorageItem('strava_refresh_token');
+        const expiresAt = await getStorageItem('strava_token_expiry');
+        
+        setSessionData({
+          user,
+          accessToken: accessToken ? `${accessToken.substring(0, 10)}...` : null,
+          refreshToken: refreshToken ? `${refreshToken.substring(0, 10)}...` : null,
+          expiresAt: expiresAt ? new Date(Number(expiresAt)).toLocaleString() : null,
+        });
+      } catch (error) {
+        console.error('Error fetching session data:', error);
+      }
+    };
+    
+    fetchSessionData();
+  }, []);
+
   // Access environment variables through Constants.expoConfig.extra
-  const helloValue = Constants.expoConfig?.extra?.REACT_APP_HELLO || 'Not found';
   
   const pokemons = useQuery({
     queryKey: ['getPokemon'],
@@ -22,7 +59,6 @@ export default function HomeScreen() {
 
       console.log('data', data);
       console.log('NODE_ENV:', process.env.NODE_ENV);
-      console.log('REACT_APP_HELLO via Constants:', helloValue);
       return data.results as {name: string; url: string}[];
     }
   });
@@ -78,10 +114,38 @@ export default function HomeScreen() {
           <View style={styles.overlayContainer}>
             <Text style={[styles.heroTitle, { color: textColor }]}>Blanmont cyclo club</Text>
             <Text style={[styles.heroSubtitle, { color: textColor }]}>Club de vélo de route en Brabant wallon</Text>
-            <Text style={[styles.heroSubtitle, { color: textColor }]}>Hello: {helloValue}</Text>
           </View>
         </View>
       }>
+      
+      {/* Display session data */}
+      <View style={styles.sessionDataContainer}>
+        <Text style={styles.sectionTitle}>Current Session Data</Text>
+        
+        <View style={styles.sessionDataRow}>
+          <Text style={styles.sessionLabel}>Access Token:</Text>
+          <Text style={styles.sessionValue}>{sessionData.accessToken || 'Not available'}</Text>
+        </View>
+        
+        <View style={styles.sessionDataRow}>
+          <Text style={styles.sessionLabel}>Refresh Token:</Text>
+          <Text style={styles.sessionValue}>{sessionData.refreshToken || 'Not available'}</Text>
+        </View>
+        
+        <View style={styles.sessionDataRow}>
+          <Text style={styles.sessionLabel}>Expires At:</Text>
+          <Text style={styles.sessionValue}>{sessionData.expiresAt || 'Not available'}</Text>
+        </View>
+        
+        {sessionData.user && (
+          <View style={styles.userDataContainer}>
+            <Text style={styles.sessionLabel}>User Data:</Text>
+            <Text style={styles.sessionValue}>
+              {JSON.stringify(sessionData.user, null, 2)}
+            </Text>
+          </View>
+        )}
+      </View>
       
       {/* Add EventGallery component at the bottom of the page */}
       <EventGallery 
@@ -146,5 +210,34 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0.5, height: 0.5 },
     textShadowRadius: 2,
+  },
+  sessionDataContainer: {
+    padding: 16,
+    marginTop: 16,
+    backgroundColor: 'rgb(238, 230, 230)',
+    borderRadius: 8,
+    marginHorizontal: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  sessionDataRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    flexWrap: 'wrap',
+  },
+  sessionLabel: {
+    fontWeight: 'bold',
+    marginRight: 8,
+    minWidth: 100,
+  },
+  sessionValue: {
+    flex: 1,
+    flexWrap: 'wrap',
+  },
+  userDataContainer: {
+    marginTop: 8,
   },
 });
