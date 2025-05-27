@@ -201,13 +201,21 @@ export const refreshAccessToken = async (): Promise<boolean> => {
 // Get Strava auth URL from your backend
 export const getStravaAuthUrl = async (): Promise<string> => {
   try {
-    // Generate a redirect URI that works across platforms
-    const redirectUri = makeRedirectUri({
-      scheme: 'your-app-scheme',
-      path: 'redirect',
-      // Use your custom domain for web if you have one
-      preferLocalhost: Platform.OS === 'web',
-    });
+    // Generate a proper redirect URI that Strava will accept
+    // For Strava, the redirect URI must be exactly as registered in your Strava application
+    let redirectUri;
+    
+    if (Platform.OS === 'web') {
+      // For web, use the full server URL (not a path)
+      redirectUri = `${API_URL}/api/callback`;
+    } else {
+      // For mobile apps, use a custom URL scheme or the server URL
+      // This must exactly match what you've registered with Strava
+      redirectUri = `${API_URL}/api/auth/strava/mobile-callback`;
+      
+      // If you've registered a custom URL scheme with Strava, use that instead:
+      // redirectUri = 'your-app-scheme://redirect';
+    }
     
     console.log('Requesting auth URL with redirect URI:', redirectUri);
     
@@ -343,24 +351,32 @@ export const loginWithStrava = async (): Promise<boolean> => {
     // Get auth URL from your SolidJS API
     const authUrl = await getStravaAuthUrl();
     
-    // Determine the correct redirect URL based on platform
-    const redirectUrl = Platform.OS === 'web' 
-      ? `${window.location.origin}/redirect`
-      : 'your-app-scheme://redirect';
+    // Important: For WebBrowser.openAuthSessionAsync, we need a URL that the WebBrowser
+    // should redirect back to after authentication
+    let returnUrl;
     
-    console.log('Starting auth session with redirect to:', redirectUrl);
+    if (Platform.OS === 'web') {
+      // For web, we want to return to our app's main page or auth completion page
+      returnUrl = `${window.location.origin}/auth-complete`;
+    } else {
+      // For native, use your app's deep link scheme
+      returnUrl = 'your-app-scheme://auth-complete';
+    }
+    
+    console.log('Starting auth session with return URL:', returnUrl);
     
     // Open browser for authentication
-    const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+    const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
     
     // Handle the result based on platform
     if (Platform.OS === 'web') {
-      // On web, your callback will be handled by your app's routing
-      // The code will be in the URL and should be extracted there
-      return true;
+      // On web, we might get redirected back to our app automatically
+      // Check if we have tokens in session/cookies already
+      return await isAuthenticated(); // Check if we're now authenticated
     } else {
-      // On native, parse the result URL for the auth code
+      // On native, parse the result URL for the auth code or tokens
       if (result.type === 'success' && result.url) {
+        // The URL might contain auth info or we may need to make another request
         return await handleAuthRedirect(result.url);
       }
     }
