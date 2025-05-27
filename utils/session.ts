@@ -4,8 +4,54 @@ import { makeRedirectUri } from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { getStorageItem, setStorageItem, deleteStorageItem } from './storage';
 
-// Your SolidJS API base URL
-const API_URL = Constants.expoConfig?.extra?.REACT_APP_HOST || 'http://localhost:3000/src/routes/api/auth/strava/url';
+// Fix the API URL - add dev flag to handle CORS in development
+const API_URL = Constants.expoConfig?.extra?.REACT_APP_HOST || 'http://localhost:3000';
+const isDev = process.env.NODE_ENV === 'development';
+
+// Helper function for API requests that properly handles CORS
+const fetchWithCORS = async (url: string, options: RequestInit = {}) => {
+  const fetchOptions: RequestInit = {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...options.headers,
+    },
+  };
+  
+  // Add CORS handling for web requests
+  if (Platform.OS === 'web') {
+    fetchOptions.credentials = 'include';
+    fetchOptions.mode = 'cors';
+    
+    // If in development, use a CORS proxy for local development if needed
+    if (isDev && url.includes('localhost')) {
+      console.log('Using CORS settings for local development');
+      console.log('If you see CORS errors, make sure your server has the following headers:');
+      console.log('- Access-Control-Allow-Origin: http://localhost:8081');
+      console.log('- Access-Control-Allow-Credentials: true');
+      console.log('- Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS');
+      console.log('- Access-Control-Allow-Headers: Content-Type,Authorization,Accept');
+      
+      // Debug information about the preflight request
+      console.log('IMPORTANT: The preflight OPTIONS request must also include these headers');
+      console.log('Check if your server properly handles OPTIONS requests');
+      console.log('Common issue: middleware may not be applying headers to OPTIONS requests');
+    }
+  }
+  
+  // Wrap in try/catch to provide better error messages for CORS issues
+  try {
+    return await fetch(url, fetchOptions);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('CORS')) {
+      console.error('CORS ERROR: This is a server-side configuration issue.');
+      console.error('Please configure your SolidJS server to allow cross-origin requests from:', 
+                    Platform.OS === 'web' ? window.location.origin : 'your mobile app');
+    }
+    throw error;
+  }
+};
 
 // Authentication state interface
 interface AuthState {
@@ -123,12 +169,9 @@ export const refreshAccessToken = async (): Promise<boolean> => {
       if (!authState.refreshToken) return false;
     }
     
-    // Call your SolidJS API's refresh token endpoint
-    const response = await fetch(`${API_URL}/auth/refresh`, {
+    // Call your SolidJS API's refresh token endpoint with CORS handling
+    const response = await fetchWithCORS(`${API_URL}/api/auth/refresh`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({
         refresh_token: authState.refreshToken,
       }),
@@ -166,25 +209,130 @@ export const getStravaAuthUrl = async (): Promise<string> => {
       preferLocalhost: Platform.OS === 'web',
     });
     
-    // Get the auth URL from your SolidJS API
-    const response = await fetch(`${API_URL}/auth/strava/url`, {
+    console.log('Requesting auth URL with redirect URI:', redirectUri);
+    
+    // Fix the endpoint path and log it
+    const fullUrl = `${API_URL}/api/auth/strava/url`;
+    console.log('Requesting from URL:', fullUrl);
+    
+    // For debugging CORS issues in web mode
+    if (Platform.OS === 'web' && isDev) {
+      console.log('=== CORS TROUBLESHOOTING GUIDE ===');
+      console.log('1. Ensure your SolidJS server has these CORS headers configured:');
+      console.log('   - Access-Control-Allow-Origin: http://localhost:8081');
+      console.log('   - Access-Control-Allow-Credentials: true (must be exactly "true")');
+      console.log('   - Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS');
+      console.log('   - Access-Control-Allow-Headers: Content-Type,Authorization,Accept');
+      console.log('2. Your server must respond properly to OPTIONS preflight requests');
+      console.log('3. You need a route handler for the redirect URI:', redirectUri);
+      console.log('==============================');
+    }
+    
+    // Alternative approach for development if CORS is an issue
+    if (Platform.OS === 'web' && isDev) {
+      console.log('Development mode detected, attempting request with modified CORS settings');
+      
+      // Try a different credentials mode as a workaround
+      const altFetchOptions: RequestInit = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          redirect_uri: redirectUri,
+          platform: Platform.OS,
+        }),
+        mode: 'cors',
+        // Try without credentials mode first if your server isn't properly configured
+        credentials: 'same-origin'
+      };
+      
+      try {
+        const response = await fetch(fullUrl, altFetchOptions);
+        
+        if (response.ok) {
+          console.log('Alternative fetch method succeeded. Server should be configured for credentials:include');
+          const data = await response.json();
+          return data.url;
+        } else {
+          console.log('Alternative fetch failed, continuing with normal fetch');
+        }
+      } catch (e) {
+        console.log('Alternative fetch approach failed, trying normal fetch');
+      }
+    }
+    
+    // Get the auth URL from your SolidJS API with CORS handling
+    const response = await fetchWithCORS(fullUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({
         redirect_uri: redirectUri,
+        platform: Platform.OS,
       }),
     });
     
+    // Check if response is OK
     if (!response.ok) {
-      throw new Error('Failed to get auth URL');
+      // Log error details
+      const statusText = response.statusText;
+      const status = response.status;
+      const responseText = await response.text();
+      console.error('Error response:', status, statusText);
+      console.error('Response body:', responseText.substring(0, 200) + '...');
+      throw new Error(`Failed to get auth URL: ${status} ${statusText}`);
+    }
+    
+    // Try to parse response as JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('Received non-JSON response:', text.substring(0, 200) + '...');
+      throw new Error('Server did not return JSON');
     }
     
     const data = await response.json();
+    
+    // Validate the response format
+    if (!data.url) {
+      console.error('Invalid response format:', data);
+      throw new Error('Response missing URL field');
+    }
+    
+    console.log('Auth URL received:', data.url.substring(0, 50) + '...');
     return data.url;
   } catch (error) {
     console.error('Error getting Strava auth URL:', error);
+    if (Platform.OS === 'web' && error instanceof TypeError && error.message.includes('NetworkError')) {
+      console.error('=== CORS ERROR DETECTED ===');
+      console.error('This is likely a CORS configuration issue on your server.');
+      console.error('Make sure your SolidJS server is:');
+      console.error('1. Running and accessible at', API_URL);
+      console.error('2. Properly configured with CORS headers for', 'http://localhost:8081');
+      console.error('3. Setting Access-Control-Allow-Credentials: true (not as empty string)');
+      console.error('4. IMPORTANT: Headers must be set on OPTIONS preflight requests too');
+      console.error('5. Check if CORS middleware is correctly processing OPTIONS requests');
+      console.error('6. Typical server setup issue: middleware needs to handle OPTIONS separately');
+      console.error('===========================');
+      
+      console.error('Server-side fix example:');
+      console.error(`
+// Example Express.js server fix
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'http://localhost:8081');
+  res.header('Access-Control-Allow-Credentials', 'true'); // Must be string 'true'
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept');
+  
+  // Critical: Handle OPTIONS requests separately
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
+      `);
+    }
     throw error;
   }
 };
@@ -195,11 +343,15 @@ export const loginWithStrava = async (): Promise<boolean> => {
     // Get auth URL from your SolidJS API
     const authUrl = await getStravaAuthUrl();
     
+    // Determine the correct redirect URL based on platform
+    const redirectUrl = Platform.OS === 'web' 
+      ? `${window.location.origin}/redirect`
+      : 'your-app-scheme://redirect';
+    
+    console.log('Starting auth session with redirect to:', redirectUrl);
+    
     // Open browser for authentication
-    const result = await WebBrowser.openAuthSessionAsync(
-      authUrl,
-      Platform.OS === 'web' ? window.location.origin : 'your-app-scheme://redirect'
-    );
+    const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
     
     // Handle the result based on platform
     if (Platform.OS === 'web') {
@@ -230,20 +382,34 @@ export const handleAuthRedirect = async (url: string): Promise<boolean> => {
       throw new Error('No code found in redirect URL');
     }
     
-    // Exchange code for tokens via your SolidJS API
-    const response = await fetch(`${API_URL}/auth/strava/callback`, {
+    console.log('Exchanging code for tokens...');
+    
+    // Exchange code for tokens via your SolidJS API with CORS handling
+    const response = await fetchWithCORS(`${API_URL}/api/auth/strava/callback`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({ code }),
     });
     
+    // Similar error handling as above
     if (!response.ok) {
-      throw new Error('Token exchange failed');
+      const statusText = response.statusText;
+      const status = response.status;
+      const responseText = await response.text();
+      console.error('Error response:', status, statusText);
+      console.error('Response body:', responseText.substring(0, 200) + '...');
+      throw new Error(`Token exchange failed: ${status} ${statusText}`);
+    }
+    
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('Received non-JSON response:', text.substring(0, 200) + '...');
+      throw new Error('Server did not return JSON');
     }
     
     const data = await response.json();
+    
+    console.log('Token exchange successful');
     
     // Save the received tokens
     await saveAuthState({
