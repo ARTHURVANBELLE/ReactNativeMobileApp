@@ -207,7 +207,7 @@ export const getStravaAuthUrl = async (): Promise<string> => {
     
     if (Platform.OS === 'web') {
       // For web, use the full server URL (not a path)
-      redirectUri = `${API_URL}/api/callback`;
+      redirectUri = `${API_URL}/api/auth/strava/mobile-callback`;
     } else {
       // For mobile apps, use a custom URL scheme or the server URL
       // This must exactly match what you've registered with Strava
