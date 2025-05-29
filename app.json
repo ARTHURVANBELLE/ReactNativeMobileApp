@@ -57,7 +57,15 @@
       ]
     ],
     "experiments": {
+      "tsconfigPaths": true,
       "typedRoutes": true
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "extra": {
+      "eas": {
+      }
     }
   }
 }

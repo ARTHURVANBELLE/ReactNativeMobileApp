@@ -1,3 +1,13 @@
+/**
+ * Main Application Home Screen
+ * 
+ * This file serves as the default route ('/) and is the first screen displayed when the app launches.
+ * In Expo Router with the (tabs) directory structure, this home.tsx will be automatically mounted
+ * as the initial page in the tab navigator.
+ * 
+ * @route / (default route)
+ * @tab Home
+ */
 import { Image, StyleSheet, Platform, Dimensions, View, Text, ScrollView } from 'react-native';
 import React, { useEffect, useState } from 'react';
 import ParallaxScrollView from '@/components/ParallaxScrollView';

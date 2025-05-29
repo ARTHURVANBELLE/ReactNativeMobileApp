@@ -18,7 +18,7 @@ export default function Index() {
         
         if (authenticated) {
           // Navigate to the tabs when authenticated
-          //router.replace('/(tabs)');
+          router.replace('/(tabs)/home');
         }
       } catch (error) {
         console.error('Error checking authentication:', error);
@@ -40,7 +40,7 @@ export default function Index() {
 
   // Redirect to tabs if authenticated
   if (authState === 'authenticated') {
-    return <Redirect href="/(tabs)" />;
+    return <Redirect href="/(tabs)/home" />;
   }
 
   // Show login screen if not authenticated

@@ -1,5 +1,5 @@
-import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 /**
  * Stores a value securely in platform-appropriate storage
@@ -9,11 +9,10 @@ export const setStorageItem = async (key: string, value: string): Promise<boolea
   try {
     if (Platform.OS === 'web') {
       localStorage.setItem(key, value);
-      return true;
     } else {
       await SecureStore.setItemAsync(key, value);
-      return true;
     }
+    return true;
   } catch (error) {
     console.error(`Error setting storage item ${key}:`, error);
     return false;
@@ -43,11 +42,10 @@ export const deleteStorageItem = async (key: string): Promise<boolean> => {
   try {
     if (Platform.OS === 'web') {
       localStorage.removeItem(key);
-      return true;
     } else {
       await SecureStore.deleteItemAsync(key);
-      return true;
     }
+    return true;
   } catch (error) {
     console.error(`Error deleting storage item ${key}:`, error);
     return false;
@@ -71,22 +69,20 @@ export const hasStorageItem = async (key: string): Promise<boolean> => {
  */
 export const clearStorage = async (): Promise<boolean> => {
   try {
+    const keysToDelete = [
+      'strava_access_token',
+      'strava_refresh_token',
+      'strava_token_expiry',
+      'user_data'
+    ];
+    
     if (Platform.OS === 'web') {
-      localStorage.clear();
-      return true;
+      keysToDelete.forEach(key => localStorage.removeItem(key));
     } else {
       // SecureStore doesn't have a clear method
-      // You would need to individually delete known keys
-      const keysToDelete = [
-        'strava_access_token',
-        'strava_refresh_token',
-        'strava_token_expiry',
-        'user_data'
-      ];
-      
       await Promise.all(keysToDelete.map(key => SecureStore.deleteItemAsync(key)));
-      return true;
     }
+    return true;
   } catch (error) {
     console.error('Error clearing storage:', error);
     return false;
