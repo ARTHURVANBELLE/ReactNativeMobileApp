@@ -131,6 +131,8 @@ export const logout = async () => {
     // Optional: Call your API to invalidate the session if needed
     // await fetch(`${API_URL}/auth/logout`, { ... });
     
+    // Notify listeners about logout
+    notifyAuthStateChange(false);
     return true;
   } catch (error) {
     console.error('Error during logout:', error);
@@ -802,7 +804,26 @@ export const loginWithStrava = async (): Promise<boolean> => {
   }
 };
 
-// Enhanced storeAuthDataDirectly with better logging
+// Authentication listeners for real-time updates
+const authListeners: Array<(isAuth: boolean) => void> = [];
+
+// Register a listener for auth state changes
+export const addAuthStateListener = (listener: (isAuth: boolean) => void) => {
+  authListeners.push(listener);
+  return () => {
+    const index = authListeners.indexOf(listener);
+    if (index > -1) {
+      authListeners.splice(index, 1);
+    }
+  };
+};
+
+// Notify all listeners about auth state changes
+const notifyAuthStateChange = (isAuth: boolean) => {
+  authListeners.forEach(listener => listener(isAuth));
+};
+
+// Update storeAuthDataDirectly to notify listeners
 export const storeAuthDataDirectly = async (authData: any): Promise<boolean> => {
   try {
     console.log('=== STORING AUTH DATA DIRECTLY ===');
@@ -845,6 +866,9 @@ export const storeAuthDataDirectly = async (authData: any): Promise<boolean> => 
     });
     
     console.log('Auth state saved successfully');
+    
+    // Notify listeners about successful authentication
+    notifyAuthStateChange(true);
     return true;
   } catch (error) {
     console.error('Failed to store auth data directly:', error);
