@@ -345,99 +345,510 @@ app.use((req, res, next) => {
   }
 };
 
-// Start Strava OAuth flow
-export const loginWithStrava = async (): Promise<boolean> => {
+// Handle Strava callback directly with auth data
+export const handleStravaCallback = async (authData: any): Promise<boolean> => {
   try {
-    // Get auth URL from your SolidJS API
-    const authUrl = await getStravaAuthUrl();
+    console.log('=== HANDLE STRAVA CALLBACK ===');
+    console.log('Auth data received:', JSON.stringify(authData, null, 2));
     
-    // Important: For WebBrowser.openAuthSessionAsync, we need a URL that the WebBrowser
-    // should redirect back to after authentication
-    let returnUrl;
+    const success = await processStravaAuthResponse(authData);
+    console.log('Process auth response result:', success);
     
-    if (Platform.OS === 'web') {
-      // For web, we want to return to our app's main page or auth completion page
-      returnUrl = `${window.location.origin}/auth-complete`;
-    } else {
-      // For native, use your app's deep link scheme
-      returnUrl = 'your-app-scheme://auth-complete';
-    }
-    
-    console.log('Starting auth session with return URL:', returnUrl);
-    
-    // Open browser for authentication
-    const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
-    
-    // Handle the result based on platform
-    if (Platform.OS === 'web') {
-      // On web, we might get redirected back to our app automatically
-      // Check if we have tokens in session/cookies already
-      return await isAuthenticated(); // Check if we're now authenticated
-    } else {
-      // On native, parse the result URL for the auth code or tokens
-      if (result.type === 'success' && result.url) {
-        // The URL might contain auth info or we may need to make another request
-        return await handleAuthRedirect(result.url);
+    // If on web, attempt to close the window after processing
+    if (Platform.OS === 'web' && window.opener) {
+      try {
+        console.log('Attempting to communicate with parent window...');
+        // Try to send message to opener before closing
+        window.opener.postMessage(
+          { type: 'strava-auth-complete', success, authData }, 
+          '*'
+        );
+        console.log('Message sent to parent window');
+        
+        // Close the window
+        console.log('Attempting to close auth window');
+        window.close();
+        console.log('Window close command issued');
+      } catch (e) {
+        console.warn('Could not communicate with parent window:', e);
       }
     }
     
-    return false;
+    return success;
   } catch (error) {
-    console.error('Strava login failed:', error);
+    console.error('Error handling Strava callback:', error);
     return false;
   }
 };
 
-// Handle auth redirect with code
+// Enhanced error handling for auth redirect
 export const handleAuthRedirect = async (url: string): Promise<boolean> => {
   try {
-    // Extract code from URL
-    const code = new URL(url).searchParams.get('code');
+    console.log('=== HANDLE AUTH REDIRECT ===');
+    console.log('Handling auth redirect with URL:', url);
     
-    if (!code) {
-      throw new Error('No code found in redirect URL');
+    // Extract auth data from URL
+    const authData = extractAuthData(url);
+    
+    console.log('Extracted auth data:', authData ? JSON.stringify(authData, null, 2) : 'No data extracted');
+    
+    if (!authData) {
+      console.error('No auth data extracted from URL');
+      return false;
     }
     
-    console.log('Exchanging code for tokens...');
+    // Process the auth response
+    const result = await processStravaAuthResponse(authData);
+    console.log('Process auth response result:', result);
+    return result;
+  } catch (error) {
+    console.error('Error handling auth redirect:', error);
+    return false;
+  }
+};
+
+// Enhanced extractAuthData with better logging
+export function extractAuthData(url: string): any | null {
+  try {
+    console.log('=== EXTRACT AUTH DATA ===');
+    console.log('Extracting data from URL:', url);
     
-    // Exchange code for tokens via your SolidJS API with CORS handling
-    const response = await fetchWithCORS(`${API_URL}/api/auth/strava/callback`, {
-      method: 'POST',
-      body: JSON.stringify({ code }),
-    });
+    const urlObj = new URL(url);
+    const params = new URLSearchParams(urlObj.search);
     
-    // Similar error handling as above
+    console.log('URL parameters:', Array.from(params.entries()));
+    
+    // For direct auth data in URL (when backend returns tokens directly)
+    if (params.has('access_token')) {
+      console.log('Found access_token in URL parameters');
+      return {
+        access_token: params.get('access_token'),
+        refresh_token: params.get('refresh_token'),
+        expires_at: params.get('expires_at'),
+        user: params.has('user') ? JSON.parse(decodeURIComponent(params.get('user') || '{}')) : null
+      };
+    }
+    
+    // For code flow (when backend returns a code that needs to be exchanged)
+    if (params.has('code')) {
+      console.log('Found code in URL parameters:', params.get('code'));
+      return {
+        code: params.get('code'),
+        state: params.get('state')
+      };
+    }
+    
+    console.warn('No access_token or code found in URL parameters');
+    return null;
+  } catch (error) {
+    console.error('Error extracting auth data:', error);
+    console.error('URL that caused the error:', url);
+    return null;
+  }
+}
+
+// Enhanced checkAuthAfterRedirect with detailed logging
+export const checkAuthAfterRedirect = async (): Promise<boolean> => {
+  try {
+    console.log('=== CHECK AUTH AFTER REDIRECT ===');
+    
+    // Try loading from storage first
+    await loadAuthState();
+    
+    if (authState.accessToken) {
+      console.log('Found existing access token after redirect');
+      return true;
+    } else {
+      console.log('No access token found in auth state');
+    }
+    
+    // Get session ID if available
+    const sessionId = await getStorageItem('strava_auth_session');
+    console.log('Using session ID for auth check:', sessionId || 'none');
+    
+    // Since CORS is a persistent issue, try browser storage first
+    if (Platform.OS === 'web') {
+      console.log('Running on web platform, checking storage options...');
+      
+      try {
+        // 1. Try localStorage first
+        if (window.localStorage) {
+          console.log('Checking localStorage for auth data');
+          const stravaAuthData = window.localStorage.getItem('strava_auth_data');
+          
+          if (stravaAuthData) {
+            console.log('Found auth data in localStorage');
+            try {
+              const authData = JSON.parse(stravaAuthData);
+              console.log('Auth data parsed successfully:', 
+                authData ? (authData.access_token ? 'Has access_token' : 'Missing access_token') : 'Empty auth data');
+              
+              window.localStorage.removeItem('strava_auth_data');
+              console.log('Removed auth data from localStorage');
+              
+              if (authData && authData.access_token) {
+                console.log('Storing auth data from localStorage');
+                return await storeAuthDataDirectly(authData);
+              }
+            } catch (parseError) {
+              console.error('Error parsing localStorage data:', parseError);
+              console.error('Raw localStorage data:', stravaAuthData);
+            }
+          } else {
+            console.log('No auth data found in localStorage');
+          }
+        } else {
+          console.log('localStorage not available');
+        }
+        
+        // 2. Try sessionStorage as fallback
+        if (window.sessionStorage) {
+          console.log('Checking sessionStorage for auth data');
+          const stravaAuthData = window.sessionStorage.getItem('strava_auth_data');
+          
+          if (stravaAuthData) {
+            console.log('Found auth data in sessionStorage');
+            try {
+              const authData = JSON.parse(stravaAuthData);
+              console.log('Auth data parsed successfully:', 
+                authData ? (authData.access_token ? 'Has access_token' : 'Missing access_token') : 'Empty auth data');
+              
+              window.sessionStorage.removeItem('strava_auth_data');
+              console.log('Removed auth data from sessionStorage');
+              
+              if (authData && authData.access_token) {
+                console.log('Storing auth data from sessionStorage');
+                return await storeAuthDataDirectly(authData);
+              }
+            } catch (parseError) {
+              console.error('Error parsing sessionStorage data:', parseError);
+              console.error('Raw sessionStorage data:', stravaAuthData);
+            }
+          } else {
+            console.log('No auth data found in sessionStorage');
+          }
+        } else {
+          console.log('sessionStorage not available');
+        }
+      } catch (e) {
+        console.error('Error accessing storage:', e);
+      }
+    } else {
+      console.log('Not running on web platform, skipping web storage checks');
+    }
+    
+    // As a final fallback, check the auth status endpoint
+    console.log('Checking auth status endpoint');
+    const { isAuthenticated } = await checkAuthStatus(sessionId || undefined);
+    
+    return isAuthenticated;
+  } catch (error) {
+    console.error('Failed to check authentication after redirect:', error);
+    return false;
+  }
+};
+
+// New method to check authentication status using the consolidated endpoint
+export const checkAuthStatus = async (sessionId?: string): Promise<{isAuthenticated: boolean, authData?: any}> => {
+  try {
+    console.log('=== CHECKING AUTH STATUS ===');
+    
+    // Construct URL with session ID if provided
+    const url = new URL(`${API_URL}/api/auth/status`);
+    if (sessionId) {
+      url.searchParams.append('session_id', sessionId);
+    }
+    
+    // Add timestamp to prevent caching
+    url.searchParams.append('_t', Date.now().toString());
+    
+    console.log('Checking auth status at URL:', url.toString());
+    
+    let response;
+    try {
+      // Try first with regular fetch (may work better in some environments)
+      response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      console.log('Auth status check response status:', response.status);
+    } catch (e) {
+      console.log('Regular fetch failed, trying fetchWithCORS:', e);
+      // If regular fetch fails, try with our CORS helper
+      response = await fetchWithCORS(url.toString(), {
+        method: 'GET',
+      });
+    }
+    
     if (!response.ok) {
-      const statusText = response.statusText;
-      const status = response.status;
-      const responseText = await response.text();
-      console.error('Error response:', status, statusText);
-      console.error('Response body:', responseText.substring(0, 200) + '...');
-      throw new Error(`Token exchange failed: ${status} ${statusText}`);
+      console.error('Auth status check failed with status:', response.status);
+      return { isAuthenticated: false };
     }
     
     const contentType = response.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
-      const text = await response.text();
-      console.error('Received non-JSON response:', text.substring(0, 200) + '...');
-      throw new Error('Server did not return JSON');
+      console.error('Auth status check returned non-JSON response');
+      return { isAuthenticated: false };
     }
     
     const data = await response.json();
+    console.log('Auth status response:', data);
     
-    console.log('Token exchange successful');
+    if (data.isAuthenticated && data.access_token) {
+      // Store authentication data
+      const success = await storeAuthDataDirectly({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expires_at: data.expires_at,
+        user: data.user
+      });
+      
+      console.log('Auth data stored successfully:', success);
+      return { isAuthenticated: true, authData: data };
+    }
     
-    // Save the received tokens
+    return { isAuthenticated: false };
+  } catch (error) {
+    console.error('Error checking auth status:', error);
+    return { isAuthenticated: false };
+  }
+};
+
+// Enhanced loginWithStrava with detailed debugging
+export const loginWithStrava = async (): Promise<boolean> => {
+  try {
+    console.log('=== STARTING STRAVA LOGIN FLOW ===');
+    // Get auth URL from your SolidJS API
+    console.log('Getting Strava auth URL from API');
+    const authUrl = await getStravaAuthUrl();
+    console.log('Auth URL received successfully');
+    
+    // Generate a unique session ID
+    const sessionId = Math.random().toString(36).substring(2, 15);
+    await setStorageItem('strava_auth_session', sessionId);
+    console.log('Generated session ID:', sessionId);
+    
+    // Set a flag to indicate we're in the auth process
+    await setStorageItem('auth_in_progress', 'true');
+    await setStorageItem('auth_start_time', Date.now().toString());
+    console.log('Auth process flags set');
+    
+    // Clear any existing auth data in storage
+    if (Platform.OS === 'web') {
+      try {
+        if (window.localStorage) {
+          window.localStorage.removeItem('strava_auth_data');
+        }
+        if (window.sessionStorage) {
+          window.sessionStorage.removeItem('strava_auth_data');
+        }
+        console.log('Cleared any existing auth data from storage');
+      } catch (e) {
+        console.warn('Error clearing storage:', e);
+      }
+    }
+    
+    if (Platform.OS === 'web') {
+      console.log('Running on web platform, using popup approach');
+      // For web, use a popup approach with better handling
+      const width = 600;
+      const height = 700;
+      const left = window.innerWidth / 2 - width / 2;
+      const top = window.innerHeight / 2 - height / 2;
+      
+      // Create popup window features
+      const features = `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`;
+      console.log('Popup window features:', features);
+      
+      // Add session_id to the auth URL
+      const authUrlWithSession = authUrl + (authUrl.includes('?') ? '&' : '?') + 
+                                 `state=${sessionId}`;
+      
+      // Open auth window
+      console.log('Opening auth window with URL:', authUrlWithSession.substring(0, 50) + '...');
+      const authWindow = window.open(authUrlWithSession, 'StravaAuth', features);
+      
+      if (!authWindow) {
+        console.warn('Popup blocked. Please allow popups for this site.');
+        return false;
+      }
+      console.log('Auth window opened successfully');
+      
+      // Return a promise that resolves when authentication is complete
+      return new Promise((resolve) => {
+        console.log('Setting up polling to monitor auth window');
+        // Track poll count for timeout
+        let pollCount = 0;
+        const maxPolls = 240; // 4 minutes max (polling every second)
+        
+        // Create interval to check for window closure and auth state
+        const pollInterval = setInterval(async () => {
+          // Every 15 seconds, log progress
+          if (pollCount % 15 === 0) {
+            console.log(`Still waiting for auth... (${pollCount}s elapsed)`);
+          }
+          
+          // Periodically check auth status even before window closes
+          if (pollCount % 5 === 0) { // Check every 5 seconds
+            try {
+              const { isAuthenticated } = await checkAuthStatus(sessionId);
+              if (isAuthenticated) {
+                clearInterval(pollInterval);
+                console.log('Authentication confirmed via status check');
+                if (!authWindow.closed) {
+                  try {
+                    authWindow.close();
+                  } catch (e) {
+                    console.warn('Could not close auth window:', e);
+                  }
+                }
+                resolve(true);
+                return;
+              }
+            } catch (e) {
+              console.warn('Error during periodic auth check:', e);
+            }
+          }
+          
+          // Check if auth window was closed
+          if (authWindow.closed) {
+            clearInterval(pollInterval);
+            console.log('Auth window closed, checking for authentication data');
+            
+            // Wait a moment for any storage operations to complete
+            setTimeout(async () => {
+              // First check browser storage
+              let authFromStorage = false;
+              
+              if (Platform.OS === 'web') {
+                try {
+                  if (window.localStorage && window.localStorage.getItem('strava_auth_data')) {
+                    const authData = JSON.parse(window.localStorage.getItem('strava_auth_data')!);
+                    window.localStorage.removeItem('strava_auth_data');
+                    
+                    if (authData && authData.access_token) {
+                      console.log('Found auth data in localStorage after window closed');
+                      authFromStorage = await storeAuthDataDirectly(authData);
+                    }
+                  }
+                } catch (e) {
+                  console.warn('Error reading from localStorage:', e);
+                }
+              }
+              
+              // If no auth from storage, check status endpoint
+              if (!authFromStorage) {
+                console.log('Checking final auth status with session ID:', sessionId);
+                const { isAuthenticated } = await checkAuthStatus(sessionId);
+                if (isAuthenticated) {
+                  console.log('Authentication confirmed via status check');
+                  resolve(true);
+                  return;
+                }
+              } else {
+                resolve(true);
+                return;
+              }
+              
+              // Final authentication check
+              console.log('Checking if auth was successful...');
+              const isAuth = await isAuthenticated();
+              console.log('Auth check result:', isAuth);
+              
+              if (isAuth) {
+                console.log('Authentication successful');
+                resolve(true);
+              } else {
+                console.log('Authentication failed or was cancelled');
+                resolve(false);
+              }
+              
+              await deleteStorageItem('auth_in_progress');
+            }, 1000);
+            return;
+          }
+          
+          // Check poll count to avoid infinite polling
+          if (++pollCount >= maxPolls) {
+            clearInterval(pollInterval);
+            console.log('Auth timed out after 4 minutes');
+            await deleteStorageItem('auth_in_progress');
+            resolve(false);
+          }
+        }, 1000);
+      });
+    } else {
+      // For native platforms, use WebBrowser
+      console.log('Running on native platform, using WebBrowser for auth');
+      const result = await WebBrowser.openAuthSessionAsync(
+        authUrl,
+        'stravaauth://auth-callback'
+      );
+      
+      console.log('WebBrowser auth result type:', result.type);
+      if (result.type === 'success' && result.url) {
+        console.log('Got success result with URL');
+        return await handleAuthRedirect(result.url);
+      }
+      
+      console.log('No success result or URL from WebBrowser');
+      return false;
+    }
+  } catch (error) {
+    console.error('Strava login failed:', error);
+    await deleteStorageItem('auth_in_progress');
+    return false;
+  }
+};
+
+// Enhanced storeAuthDataDirectly with better logging
+export const storeAuthDataDirectly = async (authData: any): Promise<boolean> => {
+  try {
+    console.log('=== STORING AUTH DATA DIRECTLY ===');
+    
+    if (!authData) {
+      console.error('Auth data is null or undefined');
+      return false;
+    }
+    
+    if (!authData.access_token) {
+      console.error('Auth data missing access_token');
+      console.log('Auth data keys:', Object.keys(authData));
+      return false;
+    }
+    
+    console.log('Access token present:', authData.access_token.substring(0, 10) + '...');
+    console.log('Refresh token present:', !!authData.refresh_token);
+    
+    // Calculate expires_at if not provided
+    const expiresAt = authData.expires_at 
+      ? Number(authData.expires_at) * 1000 // Convert to milliseconds if it's in seconds
+      : (Date.now() + 6 * 60 * 60 * 1000); // Default 6 hours
+      
+    console.log('Token expiry:', new Date(expiresAt).toISOString());
+    
+    // Extract user data from various possible sources
+    const userData = authData.user || authData.athlete || null;
+    console.log('User data present:', !!userData);
+    if (userData) {
+      console.log('User data fields:', Object.keys(userData));
+    }
+    
+    // Store auth data directly
+    console.log('Saving auth state to storage');
     await saveAuthState({
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      expiresAt: Date.now() + data.expires_in * 1000,
-      user: data.user || null,
+      accessToken: authData.access_token,
+      refreshToken: authData.refresh_token || null,
+      expiresAt: expiresAt,
+      user: userData,
     });
     
+    console.log('Auth state saved successfully');
     return true;
   } catch (error) {
-    console.error('Auth redirect handling failed:', error);
+    console.error('Failed to store auth data directly:', error);
+    console.error('Auth data that caused the error:', authData ? JSON.stringify(authData, null, 2) : 'null');
     return false;
   }
 };
@@ -448,4 +859,42 @@ export const getCurrentUser = async () => {
     await loadAuthState();
   }
   return authState.user;
+};
+// Process Strava auth response and store tokens
+export const processStravaAuthResponse = async (authData: any): Promise<boolean> => {
+  try {
+    console.log('=== PROCESSING STRAVA AUTH RESPONSE ===');
+    
+    // If we received direct auth data with tokens
+    if (authData.access_token) {
+      console.log('Direct auth data received, storing tokens');
+      return await storeAuthDataDirectly(authData);
+    }
+    
+    // If we received an auth code that needs to be exchanged
+    if (authData.code) {
+      console.log('Auth code received, exchanging for tokens');
+      const response = await fetchWithCORS(`${API_URL}/api/auth/strava/token`, {
+        method: 'POST',
+        body: JSON.stringify({
+          code: authData.code,
+          state: authData.state
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Token exchange failed');
+      }
+
+      const tokenData = await response.json();
+      console.log('Token exchange successful');
+      return await storeAuthDataDirectly(tokenData);
+    }
+
+    console.error('Invalid auth data received:', authData);
+    return false;
+  } catch (error) {
+    console.error('Error processing Strava auth response:', error);
+    return false;
+  }
 };

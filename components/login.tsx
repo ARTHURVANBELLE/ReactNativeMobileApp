@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Image, Alert, useColorScheme } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Image, Alert, useColorScheme, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { loginWithStrava, isAuthenticated } from '../utils/session';
 
-export default function LoginScreen() {
+interface LoginScreenProps {
+  onLoginSuccess: () => void;
+}
+
+export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -83,14 +87,20 @@ export default function LoginScreen() {
         ]}
         activeOpacity={0.8}
       >
-        <Image 
-          source={require('../assets/images/strava-logo.png')}
-          resizeMode="contain"
-          style={styles.stravaIcon}
-        />
-        <Text style={styles.buttonText}>
-          {isAuthenticating ? 'Connecting...' : 'Connect with Strava'}
-        </Text>
+        {isAuthenticating ? (
+          <ActivityIndicator color="#FFFFFF" size="small" />
+        ) : (
+          <>
+            <Image 
+              source={require('../assets/images/strava-logo.png')}
+              resizeMode="contain"
+              style={styles.stravaIcon}
+            />
+            <Text style={styles.buttonText}>
+              {isAuthenticating ? 'Connecting...' : 'Connect with Strava'}
+            </Text>
+          </>
+        )}
       </TouchableOpacity>
       
       {/* Footer text */}
