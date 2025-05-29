@@ -33,7 +33,17 @@ const ActivitiesList = () => {
         
         const data = await response.json();
         console.log("Data received:", JSON.stringify(data).substring(0, 200) + "...");
-        return data.results || [];
+        
+        // Check what we're getting - if data is an array directly, return it
+        // If data has a results property, return that
+        if (Array.isArray(data)) {
+          return data;
+        } else if (data && data.results && Array.isArray(data.results)) {
+          return data.results;
+        } else {
+          // Handle case where we get an object with the data directly
+          return [data]; 
+        }
       } catch (err) {
         console.error("Fetch error:", err);
         throw err;
@@ -62,30 +72,36 @@ const ActivitiesList = () => {
     );
   }
 
-  // Use the API data or fall back to mock data if empty
-  const activityData = activities;
+  // Add logging to debug the data
+  console.log("Activity data from query:", activities);
+
+  // Use the API data, making sure we handle all possible formats
+  const activityData = activities || [];
 
   return (
     <FlatList
       data={activityData}
-      keyExtractor={(item) => item.id.toString()}
-      renderItem={({ item }) => (
-        <ActivityFrame
-          activity={{
-            id: item.id,
-            title: item.name || item.title,
-            description: item.description || null,
-            datetime: item.date || item.datetime,
-            distance: parseFloat(item.distance) || item.distance,
-            movingTime: parseInt(item.movingTime) || parseInt(item.duration) || 0,
-            imageUrl: item.imageUrl || null,
-            gpxUrl: item.gpxUrl || null,
-            delegueId: item.delegueId || 0,
-            users: item.users || [],
-          }}
-          onPress={(activity) => console.log('Selected activity:', activity.id)}
-        />
-      )}
+      keyExtractor={(item) => String(item.id)}
+      renderItem={({ item }) => {
+        console.log("Rendering item:", item); // Debug individual items
+        return (
+          <ActivityFrame
+            activity={{
+              id: item.id,
+              title: item.title || item.name || "",
+              description: item.description || null,
+              datetime: item.datetime || item.date || "",
+              distance: typeof item.distance === 'number' ? item.distance : parseFloat(item.distance) || 0,
+              movingTime: typeof item.movingTime === 'number' ? item.movingTime : parseInt(item.movingTime) || 0,
+              imageUrl: item.imageUrl || null,
+              gpxUrl: item.gpxUrl || null,
+              delegueId: item.delegueId || 0,
+              users: item.users || [],
+            }}
+            onPress={(activity) => console.log('Selected activity:', activity.id)}
+          />
+        );
+      }}
       contentContainerStyle={styles.list}
       refreshControl={
         <RefreshControl
