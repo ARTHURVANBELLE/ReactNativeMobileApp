@@ -1,38 +1,39 @@
-import React from 'react';
-import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import React from "react";
+import { Tabs } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#FC4C02',
+        tabBarActiveTintColor: "#FC4C02",
         headerShown: false,
-      }}>
+      }}
+    >
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Home',
+          title: "Home",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home-outline" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="activities"
+        name="profile"
         options={{
-          title: 'Activities',
+          title: "Profile",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="fitness-outline" size={size} color={color} />
+            <Ionicons name="person-outline" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="ranking"
         options={{
-          title: 'Profile',
+          title: "Ranking",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
+            <Ionicons name="trophy" size={size} color={color} />
           ),
         }}
       />

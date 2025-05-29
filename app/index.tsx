@@ -18,7 +18,7 @@ export default function Index() {
         
         if (authenticated) {
           // Navigate to the tabs when authenticated
-          router.replace('/(tabs)');
+          //router.replace('/(tabs)');
         }
       } catch (error) {
         console.error('Error checking authentication:', error);

@@ -118,35 +118,6 @@ export default function HomeScreen() {
         </View>
       }>
       
-      {/* Display session data */}
-      <View style={styles.sessionDataContainer}>
-        <Text style={styles.sectionTitle}>Current Session Data</Text>
-        
-        <View style={styles.sessionDataRow}>
-          <Text style={styles.sessionLabel}>Access Token:</Text>
-          <Text style={styles.sessionValue}>{sessionData.accessToken || 'Not available'}</Text>
-        </View>
-        
-        <View style={styles.sessionDataRow}>
-          <Text style={styles.sessionLabel}>Refresh Token:</Text>
-          <Text style={styles.sessionValue}>{sessionData.refreshToken || 'Not available'}</Text>
-        </View>
-        
-        <View style={styles.sessionDataRow}>
-          <Text style={styles.sessionLabel}>Expires At:</Text>
-          <Text style={styles.sessionValue}>{sessionData.expiresAt || 'Not available'}</Text>
-        </View>
-        
-        {sessionData.user && (
-          <View style={styles.userDataContainer}>
-            <Text style={styles.sessionLabel}>User Data:</Text>
-            <Text style={styles.sessionValue}>
-              {JSON.stringify(sessionData.user, null, 2)}
-            </Text>
-          </View>
-        )}
-      </View>
-      
       {/* Add EventGallery component at the bottom of the page */}
       <EventGallery 
         events={cyclingEvents} 
