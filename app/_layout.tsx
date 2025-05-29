@@ -41,7 +41,8 @@ function AuthWrapper({ children }: { children: ReactNode }) {
         setAuthState(authenticated ? 'authenticated' : 'unauthenticated');
         
         if (authenticated) {
-          router.replace('/(tabs)');
+          // Redirect to the home tab specifically, not just the tabs layout
+          router.replace('/(tabs)/home');
         }
       } catch (error) {
         console.error('Error checking authentication:', error);
@@ -57,7 +58,8 @@ function AuthWrapper({ children }: { children: ReactNode }) {
       
       // Navigate immediately when auth state changes
       if (isAuthenticated) {
-        router.replace('/(tabs)');
+        // Redirect to home tab when authenticated
+        router.replace('/(tabs)/home');
       } else {
         router.replace('/');
       }
