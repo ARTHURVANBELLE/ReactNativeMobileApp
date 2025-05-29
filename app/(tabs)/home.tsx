@@ -63,6 +63,9 @@ export default function HomeScreen() {
   
   const pokemons = useQuery({
     queryKey: ['getPokemon'],
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    
     queryFn: async () => {
       const response = await fetch('https://pokeapi.co/api/v2/pokemon');
       const data = await response.json();

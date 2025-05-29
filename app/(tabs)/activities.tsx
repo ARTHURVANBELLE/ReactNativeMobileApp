@@ -1,13 +1,108 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
+import React, { Suspense, useState } from "react";
+import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator } from "react-native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Constants from "expo-constants";
+import ActivityFrame from "@/components/Activity/activity-frame";
+import { fetchWithCors } from '@/utils/corsHandler';
 
-// Mock data for activities
-const mockActivities = [
-  { id: '1', type: 'Run', name: 'Morning Run', date: '2023-05-25', distance: '5.2 km', duration: '28:35' },
-  { id: '2', type: 'Ride', name: 'Evening Cycle', date: '2023-05-23', distance: '15.7 km', duration: '45:12' },
-  { id: '3', type: 'Swim', name: 'Pool Session', date: '2023-05-21', distance: '1.5 km', duration: '35:45' },
-  { id: '4', type: 'Run', name: 'Park Run', date: '2023-05-18', distance: '7.3 km', duration: '38:22' },
-];
+const API_URL = Constants.expoConfig?.extra?.REACT_APP_HOST;
+
+// A loading component for Suspense
+const LoadingActivities = () => (
+  <View style={styles.centerContent}>
+    <ActivityIndicator size="large" color="#FC4C02" />
+    <Text style={styles.loadingText}>Loading activities...</Text>
+  </View>
+);
+
+// The main activities list component
+const ActivitiesList = () => {
+  const queryClient = useQueryClient();
+  const activityNumber = 5;
+  const [refreshing, setRefreshing] = useState(false);
+
+  const { data: activities, isLoading, error, refetch } = useQuery({
+    queryKey: ["getActivities"],
+    queryFn: async () => {
+      try {
+        console.log("Fetching from:", `${API_URL}/api/activities/get-activities?activityNumber=${activityNumber}`);
+        
+        const response = await fetchWithCors(
+          `${API_URL}/api/activities/get-activities?activityNumber=${activityNumber}`
+        );
+        
+        const data = await response.json();
+        console.log("Data received:", JSON.stringify(data).substring(0, 200) + "...");
+        return data.results || [];
+      } catch (err) {
+        console.error("Fetch error:", err);
+        throw err;
+      }
+    },
+    retry: 1,
+    retryDelay: 1000,
+  });
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
+
+  if (isLoading) {
+    return <LoadingActivities />;
+  }
+
+  if (error) {
+    return (
+      <View style={styles.centerContent}>
+        <Text style={styles.errorText}>Error loading activities</Text>
+        <Text style={styles.errorMessage}>{error.message}</Text>
+      </View>
+    );
+  }
+
+  // Use the API data or fall back to mock data if empty
+  const activityData = activities;
+
+  return (
+    <FlatList
+      data={activityData}
+      keyExtractor={(item) => item.id.toString()}
+      renderItem={({ item }) => (
+        <ActivityFrame
+          activity={{
+            id: item.id,
+            title: item.name || item.title,
+            description: item.description || null,
+            datetime: item.date || item.datetime,
+            distance: parseFloat(item.distance) || item.distance,
+            movingTime: parseInt(item.movingTime) || parseInt(item.duration) || 0,
+            imageUrl: item.imageUrl || null,
+            gpxUrl: item.gpxUrl || null,
+            delegueId: item.delegueId || 0,
+            users: item.users || [],
+          }}
+          onPress={(activity) => console.log('Selected activity:', activity.id)}
+        />
+      )}
+      contentContainerStyle={styles.list}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={["#FC4C02"]}
+          tintColor="#FC4C02"
+        />
+      }
+      ListEmptyComponent={
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No activities found</Text>
+        </View>
+      }
+    />
+  );
+};
 
 export default function ActivitiesScreen() {
   return (
@@ -15,25 +110,10 @@ export default function ActivitiesScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Activities</Text>
       </View>
-
-      <FlatList
-        data={mockActivities}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.activityCard}>
-            <View style={styles.activityHeader}>
-              <Text style={styles.activityType}>{item.type}</Text>
-              <Text style={styles.activityDate}>{item.date}</Text>
-            </View>
-            <Text style={styles.activityName}>{item.name}</Text>
-            <View style={styles.activityStats}>
-              <Text style={styles.activityStat}>Distance: {item.distance}</Text>
-              <Text style={styles.activityStat}>Duration: {item.duration}</Text>
-            </View>
-          </View>
-        )}
-        contentContainerStyle={styles.list}
-      />
+      
+      <Suspense fallback={<LoadingActivities />}>
+        <ActivitiesList />
+      </Suspense>
     </View>
   );
 }
@@ -41,55 +121,88 @@ export default function ActivitiesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
   },
   header: {
-    backgroundColor: '#FC4C02',
+    backgroundColor: "#FC4C02",
     paddingTop: 60,
     paddingBottom: 20,
     paddingHorizontal: 20,
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
   },
   list: {
     padding: 16,
   },
   activityCard: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     borderRadius: 8,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
   },
   activityHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 8,
   },
   activityType: {
-    fontWeight: 'bold',
-    color: '#FC4C02',
+    fontWeight: "bold",
+    color: "#FC4C02",
   },
   activityDate: {
-    color: '#888',
+    color: "#888",
   },
   activityName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 8,
   },
   activityStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   activityStat: {
-    color: '#666',
+    color: "#666",
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#666",
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#e74c3c",
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
   },
 });
