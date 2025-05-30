@@ -10,9 +10,26 @@ export interface User {
   firstName: string;
   lastName: string;
   email: string;
+  password?: string;
   teamId?: number;
   imageUrl?: string;
   isAdmin?: boolean;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+}
+
+export interface TopUser {
+  stravaId: string;
+  firstName: string;
+  lastName: string;
+  email?: string;
+  password?: string;
+  teamId?: number;
+  imageUrl?: string;
+  isAdmin?: boolean;
+    _count?: {
+    activities: number;
+  };// Number of activities
   accessToken?: string | null;
   refreshToken?: string | null;
 }

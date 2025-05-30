@@ -16,20 +16,36 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchWithCors } from "@/utils/corsHandler";
 import { updateUserProfile } from "@/utils/userApi";
 import TeamSelect, { Team } from "@/components/Profile/TeamSelect";
+import {User as UserSchema} from "@/types/models";
 
-interface UserSchema {
-  firstName: string;
-  lastName: string;
-  email: string;
-  teamId: number;
-  imageUrl: string;
-  stravaId: number;
-  isAdmin: boolean;
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: string;
-  password: string;
-}
+// Debug function to log user data changes
+const debugUserData = (label: string, data: any) => {
+  console.log(`[DEBUG:USER] ${label}:`, JSON.stringify(data, null, 2));
+};
+
+// Function to normalize user data format
+const normalizeUserData = (data: any): UserSchema => {
+  // Handle different response formats
+  const userData = data.user || data;
+  
+  if (!userData) {
+    throw new Error("Invalid user data format received");
+  }
+  
+  // Ensure all expected fields have appropriate types
+  return {
+    stravaId: userData.stravaId || '',
+    firstName: userData.firstName || '',
+    lastName: userData.lastName || '',
+    email: userData.email || '',
+    password: userData.password || undefined,
+    imageUrl: userData.imageUrl || '',
+    teamId: userData.teamId || null,
+    isAdmin: !!userData.isAdmin,
+    accessToken: userData.accessToken || null,
+    refreshToken: userData.refreshToken || null,
+  };
+};
 
 export default function ProfileScreen() {
   const [userSession, setUserSession] = useState<any>(null);
@@ -52,8 +68,8 @@ export default function ProfileScreen() {
 
   const userQuery = useQuery({
     queryKey: ["getUser"],
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
+    staleTime: 30000,
+    refetchOnWindowFocus: true,
     enabled: !!userSession?.id, // Only run query when userSession is available
 
     queryFn: async () => {
@@ -61,23 +77,60 @@ export default function ProfileScreen() {
         throw new Error("User session not available");
       }
 
-      const response = await fetchWithCors(
-        `http://localhost:3000/api/user/by-id?userId=${userSession.id}`
-      );
-      const data = await response.json();
+      debugUserData("Fetching user with ID", userSession.id);
 
-      console.log("User data received:", data);
-
-      // Check if data is directly the user object or nested under a 'user' property
-      const userData = data.user || data;
-
-      if (userData) {
-        // Update the local state with user data
-        setUser(userData);
-        return userData;
+      try {
+        const response = await fetchWithCors(
+          `http://localhost:3000/api/user/by-id?userId=${userSession.id}`
+        );
+        
+        // Check if response is a proper Response object
+        if (response && typeof response === 'object' && 'ok' in response) {
+          if (!response.ok) {
+            // Handle error response safely
+            const typedResponse = response as Response;
+            let errorMessage = `API error: ${typedResponse.status}`;
+            try {
+              const errorText = await typedResponse.text();
+              console.error("API error response:", errorText);
+              errorMessage += ` - ${errorText}`;
+            } catch (textError) {
+              console.error("Could not extract error text:", textError);
+            }
+            throw new Error(errorMessage);
+          }
+          
+          try {
+            const data = await response;
+            debugUserData("Raw API response", data);
+            
+            // Normalize the user data
+            const normalizedUser = normalizeUserData(data);
+            debugUserData("Normalized user data", normalizedUser);
+            
+            // Update the local state with normalized user data
+            setUser(normalizedUser);
+            return normalizedUser;
+          } catch (jsonError) {
+            console.error("Error parsing JSON response:", jsonError);
+            throw new Error("Invalid response format");
+          }
+        } else {
+          // Handle case where response is not a proper Response object
+          console.error("Invalid response object:", response);
+          if (response && typeof response === 'object') {
+            // If response is already parsed JSON
+            debugUserData("Direct JSON response", response);
+            const normalizedUser = normalizeUserData(response);
+            setUser(normalizedUser);
+            return normalizedUser;
+          }
+          throw new Error("Invalid response type from fetchWithCors");
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+        throw error;
       }
-
-      throw new Error("Failed to fetch user data");
     },
   });
 
@@ -90,7 +143,7 @@ export default function ProfileScreen() {
     queryFn: async () => {
       const response = await fetchWithCors(
         `http://localhost:3000/api/team/get-teams`
-      );
+      ) as Response;
       const data = await response.json();
 
       console.log("Teams data received:", data);
@@ -111,15 +164,27 @@ export default function ProfileScreen() {
         throw new Error("User session not available");
       }
 
-      // Prepare the data object for the API
+      // Prepare the data object for the API and convert null to undefined for tokens
       const updateData = {
         stravaId: userSession.id,
         ...userData,
+        accessToken: userData.accessToken ?? undefined,
+        refreshToken: userData.refreshToken ?? undefined,
       };
+      
+      debugUserData("Updating user with data", updateData);
 
-      // Use the updateUserProfile function
-      const updatedUser = await updateUserProfile(updateData);
-      return { user: updatedUser };
+      try {
+        const updatedUser = await updateUserProfile(updateData);
+        debugUserData("Update response", updatedUser);
+        
+        // Normalize the response data
+        const normalizedUser = normalizeUserData(updatedUser);
+        return { user: normalizedUser };
+      } catch (error) {
+        console.error("Error updating user profile:", error);
+        throw error;
+      }
     },
     onSuccess: (data) => {
       // Update local user data and reset editing state
@@ -129,10 +194,12 @@ export default function ProfileScreen() {
 
       // Invalidate and refetch user data
       queryClient.invalidateQueries({ queryKey: ["getUser"] });
-
+      
+      debugUserData("Profile updated successfully", data.user);
       Alert.alert("Success", "Profile updated successfully");
     },
     onError: (error) => {
+      console.error("Profile update failed:", error);
       Alert.alert(
         "Update Failed",
         error instanceof Error ? error.message : "Unknown error occurred"

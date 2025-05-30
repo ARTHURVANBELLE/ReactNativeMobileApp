@@ -72,20 +72,18 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
 
     queryFn: async () => {
       if (!authState?.accessToken) {
-        throw new Error(
-          "Authentication required: No Strava access token available"
-        );
+        throw new Error("Authentication required: No Strava access token available");
       }
-
-      // Use fetchWithCors with the correct endpoint
-      const apiEndpoint = "http://localhost:3000/api/strava/activities/get-lasts?count=9";
       
-      console.log("Fetching Strava activities from:", apiEndpoint);
-      console.log("With auth token:", Boolean(authState?.accessToken) ? "Present (hidden for security)" : "Missing");
-
+      console.log("Fetching Strava activities directly from Strava API");
+      console.log("With auth token:", Boolean(authState?.accessToken) ? "Present" : "Missing");
+      
       try {
-        // Use fetchWithCors for the API request
-        const response = await fetchWithCors(apiEndpoint, {
+        // Directly use the Strava API endpoint
+        const endpoint = "https://www.strava.com/api/v3/athlete/activities?per_page=9";
+        console.log("Endpoint:", endpoint);
+        
+        const response = await fetchWithCors(endpoint, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -93,108 +91,26 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
             "Authorization": `Bearer ${authState.accessToken}`,
           },
         }) as Response;
-
+        
         console.log("Response status:", response.status);
-
-        // Check if response is OK
+        
         if (!response.ok) {
-          const contentType = response.headers.get("content-type") || "";
-          
-          // For HTML responses (like error pages), get the text
-          if (contentType.includes("text/html")) {
-            const text = await response.text();
-            console.error("Server returned HTML instead of JSON:", text.substring(0, 200) + "...");
-            throw new Error(`Server error: ${response.status} - HTML response received instead of JSON`);
-          } 
-          
-          // For JSON error responses
-          if (contentType.includes("application/json")) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || `Server error: ${response.status}`);
-          }
-          
-          // For other error types
           throw new Error(`API request failed with status ${response.status}`);
         }
-
-        // Check content type
-        const contentType = response.headers.get("content-type") || "";
-        if (!contentType.includes("application/json")) {
-          const text = await response.text();
-          console.error("Expected JSON but got:", contentType);
-          console.error("Response preview:", text.substring(0, 200) + "...");
-          throw new Error("Server did not return JSON data");
-        }
-
-        // Parse response as JSON
-        const responseText = await response.text();
-        console.log("Raw response text:", responseText.substring(0, 200) + (responseText.length > 200 ? "..." : ""));
         
-        let activities;
-        try {
-          activities = JSON.parse(responseText);
-        } catch (parseError) {
-          console.error("JSON parse error:", parseError);
-          console.error("Invalid JSON:", responseText.substring(0, 200) + "...");
-          throw new Error("Failed to parse server response as JSON");
-        }
-
-        // Log success
-        console.log("Successfully parsed response as JSON");
+        const activities = await response.json();
+        console.log(`Retrieved ${activities.length} activities from Strava`);
         
-        // Detailed logging of the returned data
-        if (Array.isArray(activities)) {
-          console.log(`Received ${activities.length} activities`);
-          if (activities.length > 0) {
-            console.log("First activity example:", JSON.stringify(activities[0], null, 2));
-          }
-        } else {
-          console.log("Response is not an array:", typeof activities);
+        if (activities.length > 0) {
+          console.log("First activity:", activities[0].name, 
+            "Type:", activities[0].type, 
+            "Date:", new Date(activities[0].start_date).toLocaleDateString());
         }
-
-        return Array.isArray(activities) ? activities : [];
+        
+        return activities;
       } catch (error) {
-        console.error("Error fetching activities:", error);
-        
-        // Try a different endpoint as fallback, also with fetchWithCors
-        try {
-          console.log("Trying alternative endpoint...");
-          
-          
-          // Use a different endpoint structure
-          const fallbackEndpoint = "http://localhost:3000/api/strava/get-activities?limit=5";
-          console.log("Fallback endpoint:", fallbackEndpoint);
-          
-          const fallbackResponse = await fetchWithCors(fallbackEndpoint, {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              "Accept": "application/json",
-              "Authorization": `Bearer ${authState.accessToken}`,
-              "Cache-Control": "no-cache", // Prevent caching
-            },
-          }) as Response;
-          
-          console.log("Fallback response status:", fallbackResponse.status);
-          
-          if (!fallbackResponse.ok) {
-            throw new Error(`Fallback API request failed: ${fallbackResponse.status}`);
-          }
-          
-          const fallbackText = await fallbackResponse.text();
-          console.log("Fallback response text:", fallbackText.substring(0, 200));
-          
-          try {
-            const activities = JSON.parse(fallbackText);
-            return Array.isArray(activities) ? activities : [];
-          } catch (parseError) {
-            console.error("Fallback JSON parse error:", parseError);
-            throw new Error("Failed to parse fallback response as JSON");
-          }
-        } catch (fallbackError) {
-          console.error("Fallback request also failed:", fallbackError);
-          throw error; // Throw the original error
-        }
+        console.error("Error fetching from Strava API:", error);
+        throw error;
       }
     },
   });

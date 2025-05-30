@@ -11,24 +11,39 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchWithCors } from "@/utils/corsHandler";
 import { Ionicons } from '@expo/vector-icons';
+import { TopUser } from '@/types/models';
+import { Activity } from '@/types/models';
 
-interface Activity {
-  activityId: number;
-}
+// Debug utility function for logging data operations
+const debugRankingData = (label: string, data: any) => {
+  console.log(`[DEBUG:RANKING] ${label}:`, JSON.stringify(data, null, 2));
+};
 
-interface TopUser {
-  stravaId: number;
-  firstName: string;
-  lastName: string;
-  email: string;
-  imageUrl: string;
-  teamId: number;
-  isAdmin: boolean;
-  _count: {
-    activities: number;
-  };
-  activities: Activity[];
-}
+// Function to normalize user data format
+const normalizeTopUserData = (data: any[]): TopUser[] => {
+  if (!Array.isArray(data)) {
+    console.error('[DEBUG:RANKING] Invalid data format received:', data);
+    return [];
+  }
+  
+  debugRankingData('Normalizing data array of length', data.length);
+  
+  return data.map((user, index) => {
+    // Ensure all required fields are present with appropriate defaults
+    const normalizedUser: TopUser = {
+      stravaId: user.stravaId || `unknown-${index}`,
+      firstName: user.firstName || 'Unknown',
+      lastName: user.lastName || 'User',
+      teamId: user.teamId || null,
+      imageUrl: user.imageUrl || null,
+      _count: {
+        activities: user._count?.activities || 0
+      }
+    };
+    
+    return normalizedUser;
+  });
+};
 
 export default function RankingScreen() {
   const queryClient = useQueryClient();
@@ -36,24 +51,65 @@ export default function RankingScreen() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['topUsers'],
     queryFn: async () => {
-      const response = await fetchWithCors('http://localhost:3000/api/user/top-users?limit=10');
+      debugRankingData('Fetching top users', { timestamp: new Date().toISOString() });
       
-      if (!response.ok) {
-        throw new Error('Network response was not ok');
+      try {
+        const response = await fetchWithCors('http://localhost:3000/api/user/top-users?limit=10');
+        
+        debugRankingData('Raw response received', { 
+          type: typeof response,
+          isResponse: response instanceof Response,
+          status: (response as Response).status
+        });
+        
+        // Check if response is a proper Response object
+        if (response && typeof response === 'object' && 'ok' in response) {
+          if (!response.ok) {
+            const errorMsg = `Network error: ${(response as Response).status}`;
+            debugRankingData('Error response', { status: (response as Response).status, message: errorMsg });
+            throw new Error(errorMsg);
+          }
+          
+          try {
+            const rawData = await (response as Response).json();
+            debugRankingData('Raw API data', rawData);
+            
+            // Normalize the data
+            const normalizedData = normalizeTopUserData(Array.isArray(rawData) ? rawData : []);
+            debugRankingData('Normalized top users data', normalizedData);
+            
+            return normalizedData;
+          } catch (jsonError) {
+            debugRankingData('JSON parsing error', { error: String(jsonError) });
+            throw new Error(`Failed to parse response: ${jsonError}`);
+          }
+        } else {
+          // Direct data response (not a Response object)
+          if (response && typeof response === 'object') {
+            debugRankingData('Direct data response', response);
+            const normalizedData = normalizeTopUserData(Array.isArray(response) ? response : []);
+            return normalizedData;
+          }
+          
+          debugRankingData('Invalid response format', { response });
+          throw new Error('Invalid response format from API');
+        }
+      } catch (fetchError) {
+        debugRankingData('Fetch error', { error: String(fetchError) });
+        throw fetchError;
       }
-      
-      const data = await response.json();
-      return data as TopUser[];
     }
   });
 
   // Add refresh mutation
   const refreshRankings = useMutation({
     mutationFn: async () => {
+      debugRankingData('Manually refreshing rankings', { timestamp: new Date().toISOString() });
       // This function doesn't need to do anything except trigger the invalidation
       return Promise.resolve();
     },
     onSuccess: () => {
+      debugRankingData('Refresh successful, invalidating queries', { queryKey: ['topUsers'] });
       // Invalidate and refetch the topUsers query
       queryClient.invalidateQueries({ queryKey: ['topUsers'] });
     }
@@ -112,7 +168,7 @@ export default function RankingScreen() {
       
       <View style={styles.activityCount}>
         <Ionicons name="bicycle" size={20} color="#FC4C02" />
-        <Text style={styles.countText}>{item._count.activities}</Text>
+        <Text style={styles.countText}>{item._count?.activities ?? 0}</Text>
         <Text style={styles.activityLabel}>activities</Text>
       </View>
     </View>
