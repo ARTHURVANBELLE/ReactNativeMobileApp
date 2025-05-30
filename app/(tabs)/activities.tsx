@@ -1,13 +1,19 @@
 import React, { Suspense, useState } from "react";
-import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
+} from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
 import ActivityFrame from "@/components/Activity/activity-frame";
-import { fetchWithCors } from '@/utils/corsHandler';
+import { fetchWithCors } from "@/utils/corsHandler";
 
 const API_URL = Constants.expoConfig?.extra?.REACT_APP_HOST;
 
-// A loading component for Suspense
 const LoadingActivities = () => (
   <View style={styles.centerContent}>
     <ActivityIndicator size="large" color="#FC4C02" />
@@ -21,29 +27,24 @@ const ActivitiesList = () => {
   const activityNumber = 5;
   const [refreshing, setRefreshing] = useState(false);
 
-  const { data: activities, isLoading, error, refetch } = useQuery({
+  const {
+    data: activities,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ["getActivities"],
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       try {
-        console.log("Fetching from:", `${API_URL}/api/activities/get-activities?activityNumber=${activityNumber}`);
-        
         const response = await fetchWithCors(
           `${API_URL}/api/activities/get-activities?activityNumber=${activityNumber}`
         );
-        
+
         const data = await response.json();
-        console.log("Data received:", JSON.stringify(data).substring(0, 200) + "...");
-        
-        // Check what we're getting - if data is an array directly, return it
-        // If data has a results property, return that
-        if (Array.isArray(data)) {
-          return data;
-        } else if (data && data.results && Array.isArray(data.results)) {
-          return data.results;
-        } else {
-          // Handle case where we get an object with the data directly
-          return [data]; 
-        }
+        return data;
+
       } catch (err) {
         console.error("Fetch error:", err);
         throw err;
@@ -71,10 +72,6 @@ const ActivitiesList = () => {
       </View>
     );
   }
-
-  // Add logging to debug the data
-  console.log("Activity data from query:", activities);
-
   // Use the API data, making sure we handle all possible formats
   const activityData = activities || [];
 
@@ -88,17 +85,23 @@ const ActivitiesList = () => {
           <ActivityFrame
             activity={{
               id: item.id,
-              title: item.title || item.name || "",
+              title: item.title ||"",
               description: item.description || null,
-              datetime: item.datetime || item.date || "",
-              distance: typeof item.distance === 'number' ? item.distance : parseFloat(item.distance) || 0,
-              movingTime: typeof item.movingTime === 'number' ? item.movingTime : parseInt(item.movingTime) || 0,
+              datetime: item.datetime || "",
+              distance:
+                typeof item.distance === "number"
+                  ? item.distance
+                  : parseFloat(item.distance) || 0,
+              movingTime:
+                typeof item.movingTime === "number"
+                  ? item.movingTime
+                  : parseInt(item.movingTime) || 0,
               imageUrl: item.imageUrl || null,
-              gpxUrl: item.gpxUrl || null,
-              delegueId: item.delegueId || 0,
               users: item.users || [],
             }}
-            onPress={(activity) => console.log('Selected activity:', activity.id)}
+            onPress={(activity) =>
+              console.log("Selected activity:", activity.id)
+            }
           />
         );
       }}
@@ -126,7 +129,7 @@ export default function ActivitiesScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Activities</Text>
       </View>
-      
+
       <Suspense fallback={<LoadingActivities />}>
         <ActivitiesList />
       </Suspense>

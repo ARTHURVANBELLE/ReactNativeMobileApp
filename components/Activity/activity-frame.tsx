@@ -15,8 +15,6 @@ interface Activity {
   distance: number;
   movingTime: number;
   imageUrl: string[] | null;
-  gpxUrl: string | null;
-  delegueId: number;
   users: User[];
 }
 

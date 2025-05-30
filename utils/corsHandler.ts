@@ -37,8 +37,6 @@ export const fetchWithCors = async (url: string, options: RequestInit = {}) => {
 
   try {
     const response = await fetch(url, mergedOptions);
-    console.log(`Fetching ${url} with options:`, mergedOptions);
-    console.log(`COOOOOOOOOOOOOOOOOOOOOOOOORS --------------`);
     
     if (!response.ok) {
       throw new Error(`Request failed with status ${response.status}: ${response.statusText}`);
