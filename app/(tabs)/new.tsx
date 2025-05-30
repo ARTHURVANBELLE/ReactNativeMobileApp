@@ -1,19 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import { getCurrentUser, logout } from '@/utils/session';
-import { Ionicons } from '@expo/vector-icons';
+import { getCurrentUser } from '@/utils/session';
+import UserSelect from '@/components/New/user-selection';
+import ActivitySelect from '@/components/New/activity-selection';
+import Title from '@/components/New/title';
 
-export default function ProfileScreen() {
-  const [user, setUser] = useState<any>(null);
+export default function NewActivityScreen() {
+  const [sessionUser, setSessionUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    date: new Date(),
+    participants: [],
+    stravaActivity: null,
+  });
   const router = useRouter();
 
   useEffect(() => {
     const loadUser = async () => {
       try {
         const userData = await getCurrentUser();
-        setUser(userData);
+        setSessionUser(userData);
       } catch (error) {
         console.error('Error loading user data:', error);
       } finally {
@@ -24,33 +34,66 @@ export default function ProfileScreen() {
     loadUser();
   }, []);
 
-  const handleLogout = async () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to log out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await logout();
-              router.replace('/');
-            } catch (error) {
-              console.error('Error during logout:', error);
-              Alert.alert('Error', 'Failed to log out. Please try again.');
-            }
-          },
-        },
-      ]
+  const nextStep = () => {
+    if (currentStep < 3) {
+      setCurrentStep(currentStep + 1);
+    } else {
+      handleSubmit();
+    }
+  };
+
+  const prevStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
+    }
+  };
+
+  const updateFormData = (data : any) => {
+    setFormData({ ...formData, ...data });
+  };
+
+  const handleSubmit = () => {
+    // Here you would implement the form submission logic
+    console.log('Form submitted with data:', formData);
+    Alert.alert('Success', 'Activity created successfully!');
+    router.push('/home');
+  };
+
+  const renderStepIndicator = () => {
+    return (
+      <View style={styles.stepIndicator}>
+        <View style={[styles.step, currentStep === 1 ? styles.activeStep : {}]}>
+          <Text style={[styles.stepText, currentStep === 1 ? styles.activeStepText : {}]}>1</Text>
+        </View>
+        <View style={styles.stepLine}></View>
+        <View style={[styles.step, currentStep === 2 ? styles.activeStep : {}]}>
+          <Text style={[styles.stepText, currentStep === 2 ? styles.activeStepText : {}]}>2</Text>
+        </View>
+        <View style={styles.stepLine}></View>
+        <View style={[styles.step, currentStep === 3 ? styles.activeStep : {}]}>
+          <Text style={[styles.stepText, currentStep === 3 ? styles.activeStepText : {}]}>3</Text>
+        </View>
+      </View>
     );
+  };
+
+  const renderCurrentStep = () => {
+    switch (currentStep) {
+      case 1:
+        return <Title formData={formData} updateFormData={updateFormData} />;
+      case 2:
+        return <UserSelect formData={formData} updateFormData={updateFormData} currentUser={sessionUser} />;
+      case 3:
+        return <ActivitySelect formData={formData} updateFormData={updateFormData} currentUser={sessionUser} />;
+      default:
+        return null;
+    }
   };
 
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <Text>Loading profile...</Text>
+        <Text>Loading...</Text>
       </View>
     );
   }
@@ -58,44 +101,29 @@ export default function ProfileScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
+        <Text style={styles.headerTitle}>Create New Activity</Text>
       </View>
-
-      <View style={styles.profileCard}>
-        <Image
-          source={user?.profile ? { uri: user.profile } : require('@/assets/images/strava-logo.png')}
-          style={styles.profileImage}
-        />
-        <Text style={styles.name}>
-          {user ? `${user.firstName} ${user.lastName}` : 'User'}
-        </Text>
-        <Text style={styles.userId}>Strava ID: {user?.id || 'N/A'}</Text>
+      
+      {renderStepIndicator()}
+      
+      <View style={styles.formContainer}>
+        {renderCurrentStep()}
       </View>
-
-      <View style={styles.menuSection}>
-        <Text style={styles.sectionTitle}>Settings</Text>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="settings-outline" size={22} color="#555" />
-          <Text style={styles.menuItemText}>App Settings</Text>
-          <Ionicons name="chevron-forward" size={18} color="#aaa" />
-        </TouchableOpacity>
+      
+      <View style={styles.navigationButtons}>
+        {currentStep > 1 && (
+          <TouchableOpacity style={styles.navButton} onPress={prevStep}>
+            <Text style={styles.navButtonText}>Back</Text>
+          </TouchableOpacity>
+        )}
         
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="notifications-outline" size={22} color="#555" />
-          <Text style={styles.menuItemText}>Notifications</Text>
-          <Ionicons name="chevron-forward" size={18} color="#aaa" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="shield-checkmark-outline" size={22} color="#555" />
-          <Text style={styles.menuItemText}>Privacy</Text>
-          <Ionicons name="chevron-forward" size={18} color="#aaa" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={22} color="#E74C3C" />
-          <Text style={[styles.menuItemText, { color: '#E74C3C' }]}>Logout</Text>
+        <TouchableOpacity 
+          style={[styles.navButton, styles.primaryButton]} 
+          onPress={nextStep}
+        >
+          <Text style={styles.primaryButtonText}>
+            {currentStep === 3 ? 'Submit' : 'Next'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -122,56 +150,67 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white',
   },
-  profileCard: {
-    backgroundColor: 'white',
-    alignItems: 'center',
-    padding: 20,
-    marginHorizontal: 16,
-    marginTop: -30,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    marginBottom: 16,
-  },
-  name: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  userId: {
-    color: '#888',
-    marginBottom: 8,
-  },
-  menuSection: {
-    backgroundColor: 'white',
-    marginHorizontal: 16,
-    marginTop: 20,
-    borderRadius: 12,
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  menuItemText: {
-    fontSize: 16,
-    marginLeft: 12,
+  formContainer: {
     flex: 1,
+    padding: 20,
+  },
+  stepIndicator: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 20,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  step: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#e0e0e0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  activeStep: {
+    backgroundColor: '#FC4C02',
+  },
+  stepText: {
+    color: '#777',
+    fontWeight: 'bold',
+  },
+  activeStepText: {
+    color: 'white',
+  },
+  stepLine: {
+    height: 2,
+    width: 50,
+    backgroundColor: '#e0e0e0',
+  },
+  navigationButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 20,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  navButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  navButtonText: {
+    color: '#555',
+    fontWeight: 'bold',
+  },
+  primaryButton: {
+    backgroundColor: '#FC4C02',
+    borderColor: '#FC4C02',
+  },
+  primaryButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
   },
 });

@@ -14,37 +14,30 @@ export const createCorsHeaders = () => {
 };
 
 /**
- * Wraps fetch with CORS handling
- * @param url - The URL to fetch
- * @param options - Fetch options
- * @returns Promise with the fetch response
+ * Fetches data from a URL with CORS handling.
+ * @template T The expected response type
+ * @param {string} url - The URL to fetch data from
+ * @param {RequestInit} [options] - Fetch options
+ * @returns {Promise<T>} - The response data
  */
-export const fetchWithCors = async (url: string, options: RequestInit = {}) => {
-  const defaultOptions: RequestInit = {
-    headers: createCorsHeaders(),
-    // Don't include credentials by default as it requires special server configuration
-    // credentials: 'include',
-  };
-
-  const mergedOptions = {
-    ...defaultOptions,
-    ...options,
-    headers: {
-      ...defaultOptions.headers,
-      ...options.headers,
-    },
-  };
-
+export async function fetchWithCors<T>(url: string, options?: RequestInit): Promise<T> {
   try {
-    const response = await fetch(url, mergedOptions);
-    
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...options?.headers,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    });
+
     if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}: ${response.statusText}`);
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
-    
-    return response;
+
+    return await response.json() as T;
   } catch (error) {
-    console.error('Fetch error:', error);
+    console.error('Error in fetchWithCors:', error);
     throw error;
   }
-};
+}

@@ -1,19 +1,14 @@
 import React, { Suspense, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  RefreshControl,
-  ActivityIndicator,
-} from "react-native";
+import { View,Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator} from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
 import ActivityFrame from "@/components/Activity/activity-frame";
 import { fetchWithCors } from "@/utils/corsHandler";
+import { Activity, ApiResponse, ActivityUser } from "@/types/models";
 
 const API_URL = Constants.expoConfig?.extra?.REACT_APP_HOST;
 
+// Loading component
 const LoadingActivities = () => (
   <View style={styles.centerContent}>
     <ActivityIndicator size="large" color="#FC4C02" />
@@ -22,39 +17,65 @@ const LoadingActivities = () => (
 );
 
 // The main activities list component
-const ActivitiesList = () => {
+const ActivitiesList: React.FC = () => {
   const queryClient = useQueryClient();
   const activityNumber = 5;
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
 
   const {
     data: activities,
     isLoading,
     error,
     refetch,
-  } = useQuery({
+  } = useQuery<Activity[], Error>({
     queryKey: ["getActivities"],
     staleTime: Infinity,
     refetchOnWindowFocus: false,
-    queryFn: async () => {
+    queryFn: async (): Promise<Activity[]> => {
       try {
-        const response = await fetchWithCors(
-          `${API_URL}/api/activities/get-activities?activityNumber=${activityNumber}`
+        const apiEndpoint = `${API_URL}/api/activities/get-activities?activityNumber=${activityNumber}`;
+
+        const response = await fetchWithCors<ApiResponse<Activity[]>>(
+          apiEndpoint
         );
 
-        const data = await response.json();
-        return data;
-
+        // Check if response is directly an array (already the activities data)
+        if (Array.isArray(response)) {
+          return response as Activity[];
+        }
+        
+        // Check if response has data property (standard ApiResponse format)
+        if (response && 'data' in response && Array.isArray(response.data)) {
+          return response.data as Activity[];
+        }
+        
+        // For other cases, try to intelligently find the activities data
+        if (response && typeof response === 'object' && response !== null) {
+          // Look for an array property that might contain activities
+          for (const key in response) {
+            const value = response[key as keyof typeof response];
+            if (Array.isArray(value) && 
+                value.length > 0 && 
+                value[0] && 
+                typeof value[0] === 'object' &&
+                'title' in value[0]) {
+              return value as Activity[];
+            }
+          }
+        }
+        
+        return [];
       } catch (err) {
         console.error("Fetch error:", err);
-        throw err;
+        console.error("Error details:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
+        throw err as Error;
       }
     },
     retry: 1,
     retryDelay: 1000,
   });
 
-  const onRefresh = React.useCallback(async () => {
+  const onRefresh = React.useCallback(async (): Promise<void> => {
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
@@ -72,38 +93,56 @@ const ActivitiesList = () => {
       </View>
     );
   }
+
   // Use the API data, making sure we handle all possible formats
-  const activityData = activities || [];
+  const activityData: Activity[] = activities || [];
 
   return (
-    <FlatList
+    <FlatList<Activity>
       data={activityData}
-      keyExtractor={(item) => String(item.id)}
-      renderItem={({ item }) => {
-        console.log("Rendering item:", item); // Debug individual items
-        return (
-          <ActivityFrame
-            activity={{
-              id: item.id,
-              title: item.title ||"",
-              description: item.description || null,
-              datetime: item.datetime || "",
-              distance:
-                typeof item.distance === "number"
-                  ? item.distance
-                  : parseFloat(item.distance) || 0,
-              movingTime:
-                typeof item.movingTime === "number"
-                  ? item.movingTime
-                  : parseInt(item.movingTime) || 0,
-              imageUrl: item.imageUrl || null,
-              users: item.users || [],
-            }}
-            onPress={(activity) =>
-              console.log("Selected activity:", activity.id)
-            }
-          />
-        );
+      keyExtractor={(item: Activity) => String(item.id)}
+      renderItem={({ item }: { item: Activity }) => {
+        try {
+          return (
+            <ActivityFrame
+              activity={{
+                id: String(item.id),
+                title: item.title || "",
+                description: item.description || null,
+                datetime: item.datetime || "",
+                distance:
+                  typeof item.distance === "number"
+                    ? item.distance
+                    : parseFloat(String(item.distance)) || 0,
+                movingTime:
+                  typeof item.movingTime === "number"
+                    ? item.movingTime
+                    : parseInt(String(item.movingTime)) || 0,
+                imageUrl: item.imageUrl,
+                users: item.users?.map(
+                  (user) =>
+                    ({
+                      stravaId:
+                        typeof user === "object" && user !== null
+                          ? String(user.stravaId)
+                          : String(user),
+                    })
+                ) || [],
+              }}
+              onPress={(activity: Activity): void =>
+                console.log("Selected activity:", activity.id)
+              }
+            />
+          );
+        } catch (e) {
+          console.error("Error rendering activity item:", e);
+          console.error("Problematic item:", JSON.stringify(item, null, 2));
+          return (
+            <View style={styles.errorCard}>
+              <Text style={styles.errorText}>Failed to render activity</Text>
+            </View>
+          );
+        }
       }}
       contentContainerStyle={styles.list}
       refreshControl={
@@ -123,7 +162,7 @@ const ActivitiesList = () => {
   );
 };
 
-export default function ActivitiesScreen() {
+const ActivitiesScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -135,7 +174,9 @@ export default function ActivitiesScreen() {
       </Suspense>
     </View>
   );
-}
+};
+
+export default ActivitiesScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -223,5 +264,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#666",
     textAlign: "center",
+  },
+  errorCard: {
+    backgroundColor: "#fde2e2",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
+    borderColor: "#e74c3c",
+    borderWidth: 1,
   },
 });

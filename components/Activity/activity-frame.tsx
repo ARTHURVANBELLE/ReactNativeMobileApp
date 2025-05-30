@@ -1,22 +1,8 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
 import { format, parseISO } from 'date-fns';
+import {Activity, User} from '@/types/models'
 
-// Interface for the activity data
-interface User {
-  userId: number;
-}
-
-interface Activity {
-  id: number;
-  title: string;
-  description: string | null;
-  datetime: string;
-  distance: number;
-  movingTime: number;
-  imageUrl: string[] | null;
-  users: User[];
-}
 
 interface ActivityFrameProps {
   activity: Activity;
