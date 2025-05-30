@@ -160,6 +160,7 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
         try {
           console.log("Trying alternative endpoint...");
           
+          
           // Use a different endpoint structure
           const fallbackEndpoint = "http://localhost:3000/api/strava/get-activities?limit=5";
           console.log("Fallback endpoint:", fallbackEndpoint);
