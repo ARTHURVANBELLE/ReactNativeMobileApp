@@ -51,14 +51,33 @@ const TeamList: React.FC<TeamListProps> = ({ formData, updateFormData }) => {
     refetchOnWindowFocus: false,
     queryFn: async (): Promise<Team[]> => {
       try {
-        const response = await fetchWithCors<ApiResponse<Team[]>>(`${API_URL}/api/team/get-teams`);
-        return response.data || [];
+        const response = await fetchWithCors<ApiResponse<Team[]> | Team[]>(`${API_URL}/api/team/get-teams`);
+        
+        if (!response) {
+          return [];
+        }
+        
+        // Check if response is an array (direct data) or has a data property
+        if (Array.isArray(response)) {
+          return response;
+        } else if (response.data) {
+          return response.data;
+        } else {
+          return [];
+        }
       } catch (error) {
-        console.error("Error fetching teams:", error);
         throw error as Error;
       }
-    },
+    }
   });
+
+  useEffect(() => {
+    // Keep empty useEffect to avoid modifying component structure
+  }, [teams]);
+
+  useEffect(() => {
+    // Keep empty useEffect to avoid modifying component structure
+  }, [error]);
 
   const toggleTeamExpanded = (teamId: number): void => {
     setExpandedTeams(prev => ({
@@ -67,13 +86,21 @@ const TeamList: React.FC<TeamListProps> = ({ formData, updateFormData }) => {
     }));
   };
 
-  const isSelected = (user: User) => {
+  const isSelected = (user: User): boolean => {
+    if (!user || !user.stravaId) {
+      return false;
+    }
+    
     return formData.participants.some(
       (participant) => participant.stravaId === user.stravaId
     );
   };
 
-  const toggleUser = (user: User) => {
+  const toggleUser = (user: User): void => {
+    if (!user || !user.stravaId) {
+      return;
+    }
+    
     if (isSelected(user)) {
       updateFormData({
         participants: formData.participants.filter((p) => p.stravaId !== user.stravaId),
@@ -84,6 +111,10 @@ const TeamList: React.FC<TeamListProps> = ({ formData, updateFormData }) => {
       });
     }
   };
+
+  useEffect(() => {
+    // Keep empty useEffect to avoid modifying component structure
+  }, [teams]);
 
   if (isLoading) {
     return (
@@ -97,60 +128,83 @@ const TeamList: React.FC<TeamListProps> = ({ formData, updateFormData }) => {
   if (error) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.errorText}>Error loading teams. Please try again.</Text>
+        <Text style={styles.errorText}>Error loading teams: {error.message}</Text>
+        <Text style={styles.errorSubtext}>Please check your internet connection and try again.</Text>
       </View>
     );
   }
 
+  if (!teams || teams.length === 0) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.emptyTeamText}>No teams available</Text>
+      </View>
+    );
+  }
+  
   return (
     <FlatList
       data={teams}
-      keyExtractor={(team) => team.id.toString()}
-      renderItem={({ item: team }) => (
-        <View style={styles.teamContainer}>
-          <TouchableOpacity 
-            style={styles.teamHeader}
-            onPress={() => toggleTeamExpanded(team.id)}
-          >
-            <Text style={styles.teamName}>{team.name}</Text>
-            <AntDesign 
-              name={expandedTeams[team.id] ? "caretup" : "caretdown"} 
-              size={16} 
-              color="#666" 
-            />
-          </TouchableOpacity>
+      keyExtractor={(team) => (team && team.id) ? team.id.toString() : `team-${Math.random()}`}
+      renderItem={({ item: team }) => {
+        if (!team || !team.id) {
+          return null;
+        }
+        
+        const teamUsers = team.users || [];
+        
+        return (
+          <View style={styles.teamContainer}>
+            <TouchableOpacity 
+              style={styles.teamHeader}
+              onPress={() => toggleTeamExpanded(team.id)}
+            >
+              <Text style={styles.teamName}>{team.name || "Unnamed Team"}</Text>
+              <AntDesign 
+                name={expandedTeams[team.id] ? "caretup" : "caretdown"} 
+                size={16} 
+                color="#666" 
+              />
+            </TouchableOpacity>
 
-          {expandedTeams[team.id] && (
-            <View style={styles.usersContainer}>
-              {team.users.length > 0 ? (
-                team.users.map(user => (
-                  <TouchableOpacity
-                    key={user.stravaId}
-                    style={[
-                      styles.userItem,
-                      isSelected(user) && styles.selectedUserItem,
-                    ]}
-                    onPress={() => toggleUser(user)}
-                  >
-                    <Image
-                      source={{ uri: user.imageUrl || "https://via.placeholder.com/50" }}
-                      style={styles.userImage}
-                    />
-                    <Text style={styles.userName}>{`${user.firstName} ${user.lastName}`}</Text>
-                    {isSelected(user) && (
-                      <View style={styles.checkmark}>
-                        <Text style={styles.checkmarkText}>✓</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <Text style={styles.emptyTeamText}>No users in this team</Text>
-              )}
-            </View>
-          )}
-        </View>
-      )}
+            {expandedTeams[team.id] && (
+              <View style={styles.usersContainer}>
+                {teamUsers.length > 0 ? (
+                  teamUsers.map(user => {
+                    if (!user || !user.stravaId) {
+                      return null;
+                    }
+                    
+                    return (
+                      <TouchableOpacity
+                        key={user.stravaId}
+                        style={[
+                          styles.userItem,
+                          isSelected(user) && styles.selectedUserItem,
+                        ]}
+                        onPress={() => toggleUser(user)}
+                      >
+                        <Image
+                          source={{ uri: user.imageUrl || "https://via.placeholder.com/50" }}
+                          style={styles.userImage}
+                        />
+                        <Text style={styles.userName}>{`${user.firstName || ''} ${user.lastName || ''}`}</Text>
+                        {isSelected(user) && (
+                          <View style={styles.checkmark}>
+                            <Text style={styles.checkmarkText}>✓</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })
+                ) : (
+                  <Text style={styles.emptyTeamText}>No users in this team</Text>
+                )}
+              </View>
+            )}
+          </View>
+        );
+      }}
       ListEmptyComponent={
         <Text style={styles.emptyTeamText}>No teams available</Text>
       }
@@ -286,6 +340,11 @@ const styles = StyleSheet.create({
   errorText: {
     color: 'red',
     textAlign: 'center',
+  },
+  errorSubtext: {
+    color: '#888',
+    textAlign: 'center',
+    marginTop: 8,
   },
   skeletonContainer: {
     padding: 12,
