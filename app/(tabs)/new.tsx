@@ -60,6 +60,24 @@ export default function NewActivityScreen() {
     setFormData({ ...formData, ...data });
   };
 
+  // Add a resetForm function to clear form data
+  const resetForm = () => {
+    setCurrentStep(1); // Return to first step
+    setFormData({
+      id: '',
+      title: '',
+      date: new Date(),
+      movingTime: 0,
+      distance: 0,
+      delegueId: '',
+      description: '',
+      gpxUrl: '',
+      imageUrl: 'https://cyclotourisme-mag.com/wp-content/uploads/sites/2/2016/11/Cyclomontagnardes.jpg',
+      users: [],
+      comments: [],
+    });
+  };
+
   const handleSubmit = async () => {
     // Log the form data for debugging
     console.log('Form submitted with data:');
@@ -90,8 +108,26 @@ export default function NewActivityScreen() {
       apiFormData, 
       (activityId) => {
         console.log(`Activity created successfully with ID: ${activityId}`);
-        // Navigate to the home screen after success
-        router.push('/home');
+        
+        // Reset form after successful submission
+        resetForm();
+        
+        // Show temporary success message
+        Alert.alert(
+          'Success',
+          'Activity created successfully! Would you like to add another?',
+          [
+            {
+              text: 'No, go to home',
+              onPress: () => router.push('/home'),
+              style: 'cancel',
+            },
+            {
+              text: 'Yes, add another',
+              onPress: () => {}, // Form is already reset, stay on page
+            },
+          ]
+        );
       }
     );
     
