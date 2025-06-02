@@ -7,11 +7,10 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { StravaActivity } from "@/types/models";
-import { useThemeColor } from "@/hooks/useThemeColor";
 import Constants from "expo-constants";
-import { fetchWithCors } from "@/utils/corsHandler";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { loadAuthState } from "@/utils/session";
 
@@ -40,6 +39,7 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
     user: any | null;
   } | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
+  const [skipDebugMode, setSkipDebugMode] = useState<boolean>(true); // Default to skip debug mode
 
   // Load auth state to get Strava token
   useEffect(() => {
@@ -47,12 +47,6 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
       setIsLoadingAuth(true);
       try {
         const state = await loadAuthState();
-        console.log(
-          "Auth state loaded:",
-          state ? "Available" : "Not available"
-        );
-        console.log("Access token available:", Boolean(state?.accessToken));
-
         setAuthState(state);
       } catch (error) {
         console.error("Error loading auth state:", error);
@@ -72,41 +66,29 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
 
     queryFn: async () => {
       if (!authState?.accessToken) {
-        throw new Error("Authentication required: No Strava access token available");
+        throw new Error(
+          "Authentication required: No Strava access token available"
+        );
       }
-      
-      console.log("Fetching Strava activities directly from Strava API");
-      console.log("With auth token:", Boolean(authState?.accessToken) ? "Present" : "Missing");
-      
+
       try {
         // Directly use the Strava API endpoint
-        const endpoint = "https://www.strava.com/api/v3/athlete/activities?per_page=9";
-        console.log("Endpoint:", endpoint);
+        const endpoint = `${API_URL}/api/strava/activities/get-lasts?count=5`;
         
-        const response = await fetchWithCors(endpoint, {
+        const response = await fetch(endpoint, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": `Bearer ${authState.accessToken}`,
+            Accept: "application/json",
+            Authorization: `Bearer ${authState.accessToken}`,
           },
-        }) as Response;
-        
-        console.log("Response status:", response.status);
+        });
         
         if (!response.ok) {
           throw new Error(`API request failed with status ${response.status}`);
         }
-        
+
         const activities = await response.json();
-        console.log(`Retrieved ${activities.length} activities from Strava`);
-        
-        if (activities.length > 0) {
-          console.log("First activity:", activities[0].name, 
-            "Type:", activities[0].type, 
-            "Date:", new Date(activities[0].start_date).toLocaleDateString());
-        }
-        
         return activities;
       } catch (error) {
         console.error("Error fetching from Strava API:", error);
@@ -267,6 +249,8 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
       </View>
     );
   }
+
+  
 
   return (
     <View style={styles.container}>
@@ -463,6 +447,42 @@ const styles = StyleSheet.create({
     color: "#FC4C02",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  // Debug styles
+  debugSection: {
+    backgroundColor: '#f5f5f5',
+    padding: 16,
+    borderRadius: 8,
+    margin: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  debugTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 10,
+    marginBottom: 5,
+    color: '#333',
+  },
+  debugText: {
+    fontSize: 16,
+    backgroundColor: '#fff',
+    padding: 10,
+    borderRadius: 4,
+    textAlign: 'center',
+    color: 'green',
+    fontWeight: 'bold',
+  },
+  continueButton: {
+    backgroundColor: '#333',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  continueButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
   },
 });
 
