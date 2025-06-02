@@ -14,7 +14,7 @@ export default function NewActivityScreen() {
     title: '',
     description: '',
     date: new Date(),
-    participants: [],
+    users: [],
     stravaActivity: null,
   });
   const router = useRouter();
@@ -53,8 +53,11 @@ export default function NewActivityScreen() {
   };
 
   const handleSubmit = () => {
-    // Here you would implement the form submission logic
-    console.log('Form submitted with data:', formData);
+    // Log form data as formatted JSON
+    console.log('Form submitted with data:');
+    console.log(JSON.stringify(formData, null, 2));
+    
+    // Display success alert and navigate to home screen
     Alert.alert('Success', 'Activity created successfully!');
     router.push('/home');
   };

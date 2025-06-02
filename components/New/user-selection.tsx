@@ -18,11 +18,12 @@ import { Team, User, ApiResponse } from "@/types/models";
 
 const API_URL = Constants.expoConfig?.extra?.REACT_APP_HOST;
 
+// Update interface to use string array instead of objects
 interface UserSelectProps {
   formData: {
-    participants: User[];
+    users: string[]; // Array of stravaIds
   };
-  updateFormData: (data: Partial<{ participants: User[] }>) => void;
+  updateFormData: (data: Partial<{ users: string[] }>) => void;
   currentUser: User;
 }
 
@@ -34,11 +35,12 @@ const TeamSkeleton = () => (
   </View>
 );
 
+// Update TeamListProps to match
 interface TeamListProps {
   formData: {
-    participants: User[];
+    users: string[]; // Array of stravaIds
   };
-  updateFormData: (data: Partial<{ participants: User[] }>) => void;
+  updateFormData: (data: Partial<{ users: string[] }>) => void;
 }
 
 const TeamList: React.FC<TeamListProps> = ({ formData, updateFormData }) => {
@@ -91,9 +93,8 @@ const TeamList: React.FC<TeamListProps> = ({ formData, updateFormData }) => {
       return false;
     }
     
-    return formData.participants.some(
-      (participant) => participant.stravaId === user.stravaId
-    );
+    // Check if the stravaId is in the participants array directly
+    return formData.users.includes(user.stravaId);
   };
 
   const toggleUser = (user: User): void => {
@@ -102,12 +103,14 @@ const TeamList: React.FC<TeamListProps> = ({ formData, updateFormData }) => {
     }
     
     if (isSelected(user)) {
+      // Remove this stravaId from participants
       updateFormData({
-        participants: formData.participants.filter((p) => p.stravaId !== user.stravaId),
+        users: formData.users.filter(id => id !== user.stravaId),
       });
     } else {
+      // Simply add the stravaId to the array
       updateFormData({
-        participants: [...formData.participants, user],
+        users: [...formData.users, user.stravaId],
       });
     }
   };
@@ -230,7 +233,7 @@ const UserSelect: React.FC<UserSelectProps> = ({
       </Suspense>
 
       <Text style={styles.selectedCount}>
-        {formData.participants.length} participants selected
+        {formData.users.length} participants selected
       </Text>
     </View>
   );

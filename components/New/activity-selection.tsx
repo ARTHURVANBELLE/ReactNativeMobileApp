@@ -9,10 +9,24 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
-import { StravaActivity } from "@/types/models";
 import Constants from "expo-constants";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { loadAuthState } from "@/utils/session";
+
+// Updated interface with only the required fields
+export interface StravaActivity {
+  id: string;
+  name: string;
+  distance: number;
+  moving_time: number;
+  elapsed_time: number;
+  total_elevation_gain: number;
+  type: string;
+  start_date: string;
+  average_speed: number;
+  max_speed: number;
+  thumbnail?: string; // Keep for UI display purposes
+}
 
 const API_URL = Constants.expoConfig?.extra?.REACT_APP_HOST;
 interface ActivitySelectProps {
@@ -39,7 +53,6 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
     user: any | null;
   } | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
-  const [skipDebugMode, setSkipDebugMode] = useState<boolean>(true); // Default to skip debug mode
 
   // Load auth state to get Strava token
   useEffect(() => {
@@ -141,8 +154,24 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
     );
   };
 
-  const selectActivity = (activity: StravaActivity) => {
-    updateFormData({ stravaActivity: activity });
+  const selectActivity = (activity: any) => {
+    // Extract only the specific fields we want to store in the form
+    const filteredActivity: StravaActivity = {
+      id: activity.id,
+      name: activity.name,
+      distance: activity.distance,
+      moving_time: activity.moving_time,
+      elapsed_time: activity.elapsed_time,
+      total_elevation_gain: activity.total_elevation_gain,
+      type: activity.type,
+      start_date: activity.start_date,
+      average_speed: activity.average_speed,
+      max_speed: activity.max_speed,
+      thumbnail: activity.thumbnail, // Keep for UI display
+    };
+    
+    // Update the form with the filtered activity data
+    updateFormData({ stravaActivity: filteredActivity });
   };
 
   // If still loading auth state
@@ -447,31 +476,6 @@ const styles = StyleSheet.create({
     color: "#FC4C02",
     fontSize: 16,
     fontWeight: "bold",
-  },
-  // Debug styles
-  debugSection: {
-    backgroundColor: '#f5f5f5',
-    padding: 16,
-    borderRadius: 8,
-    margin: 16,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  debugTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginTop: 10,
-    marginBottom: 5,
-    color: '#333',
-  },
-  debugText: {
-    fontSize: 16,
-    backgroundColor: '#fff',
-    padding: 10,
-    borderRadius: 4,
-    textAlign: 'center',
-    color: 'green',
-    fontWeight: 'bold',
   },
   continueButton: {
     backgroundColor: '#333',
