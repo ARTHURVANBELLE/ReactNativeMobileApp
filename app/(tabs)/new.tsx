@@ -5,17 +5,25 @@ import { getCurrentUser } from '@/utils/session';
 import UserSelect from '@/components/New/user-selection';
 import ActivitySelect from '@/components/New/activity-selection';
 import Title from '@/components/New/title';
+import {submitActivityFormWithErrorHandling} from '@/utils/submit';
+
 
 export default function NewActivityScreen() {
   const [sessionUser, setSessionUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
+    id: '',
     title: '',
-    description: '',
     date: new Date(),
+    movingTime: 0,
+    distance: 0,
+    delegueId: '',
+    description: '',
+    gpxUrl: '',
+    imageUrl: 'https://cyclotourisme-mag.com/wp-content/uploads/sites/2/2016/11/Cyclomontagnardes.jpg',
     users: [],
-    stravaActivity: null,
+    comments: [],
   });
   const router = useRouter();
 
@@ -52,14 +60,45 @@ export default function NewActivityScreen() {
     setFormData({ ...formData, ...data });
   };
 
-  const handleSubmit = () => {
-    // Log form data as formatted JSON
+  const handleSubmit = async () => {
+    // Log the form data for debugging
     console.log('Form submitted with data:');
     console.log(JSON.stringify(formData, null, 2));
     
-    // Display success alert and navigate to home screen
-    Alert.alert('Success', 'Activity created successfully!');
-    router.push('/home');
+    // Prepare the data for submission
+    const apiFormData = {
+      ...formData,
+      // Make sure ID is a number
+      id: parseInt(formData.id) || 0,
+      // Make sure delegueId is a number
+      delegueId: parseInt(formData.delegueId) || 0,
+      // Convert imageUrl to array if it's a string
+      imageUrl: typeof formData.imageUrl === 'string' ? [formData.imageUrl] : formData.imageUrl,
+      // Convert users to the expected format if needed
+      users: Array.isArray(formData.users) ? formData.users.map(user => {
+        if (typeof user === 'string') {
+          return { userId: parseInt(user) || 0 };
+        } else if (typeof user === 'number') {
+          return { userId: user };
+        }
+        return user;
+      }) : []
+    };
+    
+    // Submit the form using the utility
+    const success = await submitActivityFormWithErrorHandling(
+      apiFormData, 
+      (activityId) => {
+        console.log(`Activity created successfully with ID: ${activityId}`);
+        // Navigate to the home screen after success
+        router.push('/home');
+      }
+    );
+    
+    // If submission failed, stay on the current page
+    if (!success) {
+      console.log('Form submission failed');
+    }
   };
 
   const renderStepIndicator = () => {

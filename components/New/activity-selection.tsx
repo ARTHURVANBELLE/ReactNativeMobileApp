@@ -12,6 +12,7 @@ import {
 import Constants from "expo-constants";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { loadAuthState } from "@/utils/session";
+import { useRouter } from "expo-router";
 
 // Updated interface with only the required fields
 export interface StravaActivity {
@@ -31,11 +32,12 @@ export interface StravaActivity {
 const API_URL = Constants.expoConfig?.extra?.REACT_APP_HOST;
 interface ActivitySelectProps {
   formData: {
-    stravaActivity: StravaActivity | null;
+    // Replace nested stravaActivity with individual fields that might be null
+    id?: string;
+    movingTime?: number;
+    distance?: number;
   };
-  updateFormData: (
-    data: Partial<{ stravaActivity: StravaActivity | null }>
-  ) => void;
+  updateFormData: (data: Partial<ActivitySelectProps['formData']>) => void;
   currentUser: any;
 }
 
@@ -44,6 +46,7 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
   updateFormData,
   currentUser,
 }) => {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [activities, setActivities] = useState<StravaActivity[]>([]);
   const [authState, setAuthState] = useState<{
@@ -149,29 +152,17 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
   };
 
   const isSelected = (activity: StravaActivity) => {
-    return (
-      formData.stravaActivity && formData.stravaActivity.id === activity.id
-    );
+    // Check if this activity is selected by comparing IDs
+    return formData.id === activity.id;
   };
 
   const selectActivity = (activity: any) => {
-    // Extract only the specific fields we want to store in the form
-    const filteredActivity: StravaActivity = {
+    // Update the form with the activity data directly at the top level
+    updateFormData({
       id: activity.id,
-      name: activity.name,
-      distance: activity.distance,
-      moving_time: activity.moving_time,
-      elapsed_time: activity.elapsed_time,
-      total_elevation_gain: activity.total_elevation_gain,
-      type: activity.type,
-      start_date: activity.start_date,
-      average_speed: activity.average_speed,
-      max_speed: activity.max_speed,
-      thumbnail: activity.thumbnail, // Keep for UI display
-    };
-    
-    // Update the form with the filtered activity data
-    updateFormData({ stravaActivity: filteredActivity });
+      distance: parseInt(formatDistance(activity.distance)),
+      movingTime: parseInt(formatTime(activity.moving_time)),
+    });
   };
 
   // If still loading auth state
@@ -186,43 +177,20 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
     );
   }
 
-  // If the user isn't connected to Strava, show connection UI
+  // If the user isn't connected to Strava, redirect to index
   if (!authState?.accessToken) {
+    // Redirect to index page
+    useEffect(() => {
+      router.replace("/");
+    }, []);
+    
+    // Show a loading state while redirecting
     return (
       <View style={styles.centered}>
-        <Text style={styles.title}>Connect with Strava</Text>
-        <Text style={styles.subtitle}>
-          To select a Strava activity, you need to connect your Strava account.
+        <ActivityIndicator size="large" color="#FC4C02" />
+        <Text style={styles.loadingText}>
+          Redirecting to home page...
         </Text>
-
-        <TouchableOpacity
-          style={styles.stravaButton}
-          onPress={() => {
-            // Implement Strava connection using loginWithStrava from session.ts
-            import("@/utils/session").then(({ loginWithStrava }) => {
-              loginWithStrava().then((success) => {
-                if (success) {
-                  // Reload auth state after successful login
-                  loadAuthState().then((newState) => {
-                    setAuthState(newState);
-                    console.log("Strava connected successfully");
-                  });
-                } else {
-                  console.log("Strava connection failed");
-                }
-              });
-            });
-          }}
-        >
-          <View style={styles.stravaButtonContent}>
-            <Image
-              source={require("@/assets/images/strava-logo.png")}
-              style={styles.stravaIcon}
-              resizeMode="contain"
-            />
-            <Text style={styles.stravaButtonText}>Connect with Strava</Text>
-          </View>
-        </TouchableOpacity>
       </View>
     );
   }
@@ -279,8 +247,6 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
     );
   }
 
-  
-
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Select Strava Activity</Text>
@@ -301,8 +267,9 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
             onPress={() => selectActivity(item)}
           >
             <Image
-              source={{ uri: item.thumbnail }}
+              source={{ uri:"https://cyclotourisme-mag.com/wp-content/uploads/sites/2/2016/11/Cyclomontagnardes.jpg" }}
               style={styles.activityImage}
+              resizeMode="cover"
             />
             <View style={styles.activityDetails}>
               <Text style={styles.activityName}>{item.name}</Text>

@@ -1,7 +1,9 @@
-import React, { Suspense, useState } from "react";
-import { View,Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator} from "react-native";
+import React, { Suspense, useState, useCallback } from "react";
+import { View, Text, StyleSheet, FlatList, RefreshControl, ActivityIndicator, TouchableOpacity } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
+import { useFocusEffect } from "expo-router";
+import { Ionicons } from '@expo/vector-icons';
 import ActivityFrame from "@/components/Activity/activity-frame";
 import { fetchWithCors } from "@/utils/corsHandler";
 import { Activity, ApiResponse, ActivityUser } from "@/types/models";
@@ -27,9 +29,11 @@ const ActivitiesList: React.FC = () => {
     isLoading,
     error,
     refetch,
+    isFetching,
   } = useQuery<Activity[], Error>({
     queryKey: ["getActivities"],
-    staleTime: Infinity,
+    staleTime: 60000, // Set a reasonable stale time (1 minute)
+    // refetchOnWindowFocus is for web browsers, not as relevant for mobile
     refetchOnWindowFocus: false,
     queryFn: async (): Promise<Activity[]> => {
       try {
@@ -75,6 +79,19 @@ const ActivitiesList: React.FC = () => {
     retryDelay: 1000,
   });
 
+  // This hook will run when the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log("Activities screen focused - refetching data");
+      refetch();
+      
+      // Return a cleanup function (optional)
+      return () => {
+        console.log("Activities screen blurred");
+      };
+    }, [refetch])
+  );
+
   const onRefresh = React.useCallback(async (): Promise<void> => {
     setRefreshing(true);
     await refetch();
@@ -98,67 +115,86 @@ const ActivitiesList: React.FC = () => {
   const activityData: Activity[] = activities || [];
 
   return (
-    <FlatList<Activity>
-      data={activityData}
-      keyExtractor={(item: Activity) => String(item.id)}
-      renderItem={({ item }: { item: Activity }) => {
-        try {
-          return (
-            <ActivityFrame
-              activity={{
-                id: String(item.id),
-                title: item.title || "",
-                description: item.description || null,
-                datetime: item.datetime || "",
-                distance:
-                  typeof item.distance === "number"
-                    ? item.distance
-                    : parseFloat(String(item.distance)) || 0,
-                movingTime:
-                  typeof item.movingTime === "number"
-                    ? item.movingTime
-                    : parseInt(String(item.movingTime)) || 0,
-                imageUrl: item.imageUrl,
-                users: item.users?.map(
-                  (user) =>
-                    ({
-                      stravaId:
-                        typeof user === "object" && user !== null
-                          ? String(user.stravaId)
-                          : String(user),
-                    })
-                ) || [],
-              }}
-              onPress={(activity: Activity): void =>
-                console.log("Selected activity:", activity.id)
-              }
-            />
-          );
-        } catch (e) {
-          console.error("Error rendering activity item:", e);
-          console.error("Problematic item:", JSON.stringify(item, null, 2));
-          return (
-            <View style={styles.errorCard}>
-              <Text style={styles.errorText}>Failed to render activity</Text>
+    <View style={styles.container}>
+      <View style={styles.refreshButtonContainer}>
+        <TouchableOpacity 
+          style={styles.refreshButton}
+          onPress={onRefresh}
+          disabled={refreshing || isFetching}
+        >
+          {refreshing || isFetching ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <View style={styles.refreshButtonContent}>
+              <Ionicons name="refresh" size={18} color="#fff" />
+              <Text style={styles.refreshButtonText}>Refresh</Text>
             </View>
-          );
+          )}
+        </TouchableOpacity>
+      </View>
+      
+      <FlatList<Activity>
+        data={activityData}
+        keyExtractor={(item: Activity) => String(item.id)}
+        renderItem={({ item }: { item: Activity }) => {
+          try {
+            return (
+              <ActivityFrame
+                activity={{
+                  id: String(item.id),
+                  title: item.title || "",
+                  description: item.description || null,
+                  datetime: item.datetime || "",
+                  distance:
+                    typeof item.distance === "number"
+                      ? item.distance
+                      : parseFloat(String(item.distance)) || 0,
+                  movingTime:
+                    typeof item.movingTime === "number"
+                      ? item.movingTime
+                      : parseInt(String(item.movingTime)) || 0,
+                  imageUrl: item.imageUrl,
+                  users: item.users?.map(
+                    (user) =>
+                      ({
+                        stravaId:
+                          typeof user === "object" && user !== null
+                            ? String(user.stravaId)
+                            : String(user),
+                      })
+                    ) || [],
+                }}
+                onPress={(activity: Activity): void =>
+                  console.log("Selected activity:", activity.id)
+                }
+              />
+            );
+          } catch (e) {
+            console.error("Error rendering activity item:", e);
+            console.error("Problematic item:", JSON.stringify(item, null, 2));
+            return (
+              <View style={styles.errorCard}>
+                <Text style={styles.errorText}>Failed to render activity</Text>
+              </View>
+            );
+          }
+        }}
+        contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#FC4C02"]}
+            tintColor="#FC4C02"
+          />
         }
-      }}
-      contentContainerStyle={styles.list}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={["#FC4C02"]}
-          tintColor="#FC4C02"
-        />
-      }
-      ListEmptyComponent={
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No activities found</Text>
-        </View>
-      }
-    />
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No activities found</Text>
+          </View>
+        }
+      />
+    </View>
   );
 };
 
@@ -272,5 +308,29 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderColor: "#e74c3c",
     borderWidth: 1,
+  },
+  refreshButtonContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'flex-end',
+  },
+  refreshButton: {
+    backgroundColor: '#FC4C02',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 100,
+  },
+  refreshButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  refreshButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    marginLeft: 6,
   },
 });
