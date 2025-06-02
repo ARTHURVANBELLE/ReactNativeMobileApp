@@ -1,50 +1,83 @@
-# Welcome to your Expo app 👋
+# ReactNative Mobile App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A mobile application built with React Native for tracking and sharing cycling activities with friends. This app allows users to create, manage, and participate in cycling activities.
 
-## Get started
+## 📱 Features
 
-1. Install dependencies
+- **Activity Management**: Create and manage cycling activities
+- **Multi-step Form**: User-friendly form with step indicators
+- **User Selection**: Invite friends to join your rides
+- **Activity Details**: Track distance, time, and other metrics
+- **User Authentication**: Secure login system
+- **Interactive UI**: Clean and responsive design
 
+## 🚀 Technologies
+
+- [React Native](https://reactnative.dev/)
+- [Expo Router](https://docs.expo.dev/routing/introduction/)
+- [TypeScript](https://www.typescriptlang.org/)
+- [React Native Components](https://reactnative.dev/docs/components-and-apis)
+
+## 🔧 Installation
+
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/yourusername/ReactNativeMobileApp.git
+   cd ReactNativeMobileApp
+   ```
+
+2. Install dependencies:
    ```bash
    npm install
+   # or
+   yarn install
    ```
 
-2. Start the app
-
+3. Start the development server:
    ```bash
-    npx expo start
+   npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+## 📋 Usage
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Creating a New Activity
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+1. Navigate to the "New" tab
+2. Follow the 3-step form:
+   - Step 1: Enter activity title and details
+   - Step 2: Select participants
+   - Step 3: Configure activity settings
+3. Submit to create your activity
 
-## Get a fresh project
+### Managing Activities
 
-When you're ready, run:
+- View all activities on the home screen
+- Join activities created by friends
+- Track your performance metrics
 
-```bash
-npm run reset-project
-```
+## 📷 Screenshots
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+![App Screenshot 1](path_to_screenshot1.png)
+*Caption for screenshot 1*
 
-## Learn more
+![App Screenshot 2](path_to_screenshot2.png)
+*Caption for screenshot 2*
 
-To learn more about developing your project with Expo, look at the following resources:
+## 🤝 Contributing
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Join the community
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-Join our community of developers creating universal apps.
+## 📃 License
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgements
+
+- [List any libraries, assets, or resources you used]
+- [Any individuals who contributed to the project]
