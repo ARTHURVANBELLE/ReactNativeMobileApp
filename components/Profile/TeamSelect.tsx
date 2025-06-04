@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { fetchWithCors } from "@/utils/corsHandler";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Constants from "expo-constants";
 
 interface UserSchema {
   firstName: string;
@@ -29,19 +32,67 @@ interface TeamSelectProps {
   isEditing: boolean;
 }
 
+interface ApiResponse<T> {
+  data: T;
+  success: boolean;
+  message?: string;
+}
+
 /**
  * TeamSelect component for selecting teams from a dropdown list
  */
 const TeamSelect: React.FC<TeamSelectProps> = ({
-  teams,
+  teams: propTeams,
   selectedTeamId,
   onSelectTeam,
   isEditing,
 }) => {
   const [modalVisible, setModalVisible] = useState(false);
+  const queryClient = useQueryClient();
+  
+  // API URL from environment or config
+const API_URL = Constants.expoConfig?.extra?.REACT_APP_HOST;
+  
+  const { data: fetchedTeams, isLoading, error } = useQuery<Team[], Error>({
+      queryKey: ["getTeams"],
+      staleTime: Infinity,
+      refetchOnWindowFocus: false,
+      queryFn: async (): Promise<Team[]> => {
+        try {
+          console.log('Fetching teams from:', `${API_URL}/api/team/get-teams`);
+          
+          const response = await fetchWithCors<ApiResponse<Team[]> | Team[]>(`${API_URL}/api/team/get-teams`);
+          
+          console.log('API response:', response);
+          
+          if (!response) {
+            console.log('No response received');
+            return [];
+          }
+          
+          // Check if response is an array (direct data) or has a data property
+          if (Array.isArray(response)) {
+            console.log('Response is an array of teams:', response);
+            return response;
+          } else if (response.data) {
+            console.log('Response contains data property with teams:', response.data);
+            return response.data;
+          } else {
+            console.log('Response format not recognized:', response);
+            return [];
+          }
+        } catch (error) {
+          console.error('Error fetching teams:', error);
+          throw error as Error;
+        }
+      }
+    });
 
+  // Use fetched teams if available, otherwise fallback to prop teams
+  const teamsToDisplay = fetchedTeams || propTeams || [];
+  
   // Find the selected team name
-  const selectedTeam = teams.find((team) => team.id === selectedTeamId);
+  const selectedTeam = teamsToDisplay.find((team) => team.id === selectedTeamId);
 
   if (!isEditing) {
     return (
@@ -78,34 +129,40 @@ const TeamSelect: React.FC<TeamSelectProps> = ({
               </TouchableOpacity>
             </View>
 
-            <FlatList
-              data={teams}
-              keyExtractor={(item) => item.id.toString()}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.teamOption,
-                    item.id === selectedTeamId && styles.selectedTeamOption,
-                  ]}
-                  onPress={() => {
-                    onSelectTeam(item.id);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text
+            {isLoading ? (
+              <Text style={styles.loadingText}>Loading teams...</Text>
+            ) : error ? (
+              <Text style={styles.errorText}>Error loading teams: {error.message}</Text>
+            ) : (
+              <FlatList
+                data={teamsToDisplay}
+                keyExtractor={(item) => item.id.toString()}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
                     style={[
-                      styles.teamOptionText,
-                      item.id === selectedTeamId && styles.selectedTeamOptionText,
+                      styles.teamOption,
+                      item.id === selectedTeamId && styles.selectedTeamOption,
                     ]}
+                    onPress={() => {
+                      onSelectTeam(item.id);
+                      setModalVisible(false);
+                    }}
                   >
-                    {item.name}
-                  </Text>
-                  {item.id === selectedTeamId && (
-                    <Ionicons name="checkmark" size={20} color="#4CAF50" />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
+                    <Text
+                      style={[
+                        styles.teamOptionText,
+                        item.id === selectedTeamId && styles.selectedTeamOptionText,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                    {item.id === selectedTeamId && (
+                      <Ionicons name="checkmark" size={20} color="#4CAF50" />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            )}
           </View>
         </View>
       </Modal>
@@ -193,6 +250,16 @@ const styles = StyleSheet.create({
   selectedTeamOptionText: {
     fontWeight: "600",
     color: "#4CAF50",
+  },
+  loadingText: {
+    padding: 15,
+    textAlign: 'center',
+    color: '#666',
+  },
+  errorText: {
+    padding: 15,
+    textAlign: 'center',
+    color: 'red',
   },
 });
 
