@@ -3,6 +3,17 @@ import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
 import { getStorageItem, setStorageItem, deleteStorageItem } from './storage';
 
+// Function to log authentication data with better visibility
+const logAuthData = (label: string, data: any) => {
+  try {
+    console.log(`🔐 [AUTH DEBUG] ${label}:`);
+    console.log(JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.log(`🔐 [AUTH DEBUG] ${label}: [Error stringifying data]`, error);
+    console.log('Raw data:', data);
+  }
+};
+
 // API URL configuration
 const API_URL = Constants.expoConfig?.extra?.REACT_APP_HOST || 'http://localhost:3000';
 const isDev = process.env.NODE_ENV === 'development';
@@ -38,7 +49,6 @@ const fetchWithCORS = async (url: string, options: RequestInit = {}) => {
 
 // Authentication state interface
 interface AuthState {
-  accessToken: string | null;
   jwtToken: string | null;
   stravaId: number | null;
   user: any | null;
@@ -46,7 +56,6 @@ interface AuthState {
 
 // Initialize auth state
 let authState: AuthState = {
-  accessToken: null,
   jwtToken: null,
   stravaId: null,
   user: null,
@@ -74,13 +83,11 @@ const notifyAuthStateChange = (isAuth: boolean) => {
 // Load auth state from storage
 export const loadAuthState = async (): Promise<AuthState> => {
   try {
-    const accessToken = await getStorageItem('strava_access_token');
     const jwtToken = await getStorageItem('jwt_token');
     const stravaId = await getStorageItem('strava_id');
     const userJson = await getStorageItem('user_data');
     
     authState = {
-      accessToken: accessToken,
       jwtToken: jwtToken,
       stravaId: stravaId ? Number(stravaId) : null,
       user: userJson ? JSON.parse(userJson) : null,
@@ -96,11 +103,6 @@ export const loadAuthState = async (): Promise<AuthState> => {
 // Save auth state to storage
 export const saveAuthState = async (state: AuthState) => {
   try {
-    if (state.accessToken) {
-      await setStorageItem('strava_access_token', state.accessToken);
-    } else {
-      await deleteStorageItem('strava_access_token');
-    }
     
     if (state.jwtToken) {
       await setStorageItem('jwt_token', state.jwtToken);
@@ -121,7 +123,7 @@ export const saveAuthState = async (state: AuthState) => {
     }
     
     authState = state;
-    notifyAuthStateChange(!!(state.jwtToken || state.accessToken));
+    notifyAuthStateChange(!!(state.jwtToken));
   } catch (error) {
     console.error('Error saving auth state:', error);
   }
@@ -211,36 +213,51 @@ export const getStravaAuthUrl = async (): Promise<string> => {
 // Extract auth data from URL
 export function extractAuthData(url: string): any | null {
   try {
+    logAuthData('Extracting auth data from URL', { url });
+    
     const urlObj = new URL(url);
     const params = new URLSearchParams(urlObj.search);
+    
+    // Log all URL parameters for debugging
+    const allParams: Record<string, string> = {};
+    params.forEach((value, key) => {
+      allParams[key] = value;
+    });
+    logAuthData('URL parameters', allParams);
     
     // Check for data parameter that contains JSON
     if (params.has('data')) {
       try {
-        return JSON.parse(decodeURIComponent(params.get('data') || '{}'));
+        const parsed = JSON.parse(decodeURIComponent(params.get('data') || '{}'));
+        logAuthData('Parsed data parameter', parsed);
+        return parsed;
       } catch (e) {
         console.error('Failed to parse data parameter:', e);
       }
     }
     
     // For direct auth data in URL
-    if (params.has('jwt_token') || params.has('access_token')) {
-      return {
+    if (params.has('jwt_token')) {
+      const authData = {
         jwt_token: params.get('jwt_token'),
-        access_token: params.get('access_token'),
         stravaId: params.has('stravaId') ? Number(params.get('stravaId')) : null,
         user: params.has('user') ? JSON.parse(decodeURIComponent(params.get('user') || '{}')) : null
       };
+      logAuthData('Direct auth data from URL', authData);
+      return authData;
     }
     
     // For code flow
     if (params.has('code')) {
-      return {
+      const authData = {
         code: params.get('code'),
         state: params.get('state')
       };
+      logAuthData('Code flow auth data', authData);
+      return authData;
     }
     
+    console.warn('No recognizable auth data in URL');
     return null;
   } catch (error) {
     console.error('Error extracting auth data:', error);
@@ -288,17 +305,24 @@ export const checkAuthStatus = async (sessionId?: string): Promise<{isAuthentica
     }
     
     const data = await response.json();
-    console.log('Auth status response:', JSON.stringify(data, null, 2));
+    logAuthData('Auth status response', data);
     
     // Handle the JWT token format from your backend
     if (data.isAuthenticated) {
-      // Check for different possible response formats
-      await storeAuthDataDirectly({
-        access_token: data.access_token,
-        jwt_token: data.jwt_token,
-        stravaId: data.stravaId,
+      // Load current auth state to preserve JWT if it's not in the response
+      const currentAuthState = await loadAuthState();
+      
+      // Create complete auth data by merging response with existing token
+      const completeAuthData = {
+        jwt_token: data.jwt_token || currentAuthState.jwtToken,
+        stravaId: data.stravaId || data.user?.id,
         user: data.user
-      });
+      };
+      
+      logAuthData('Complete auth data for storage', completeAuthData);
+      
+      // Store combined data
+      await storeAuthDataDirectly(completeAuthData);
       
       return { isAuthenticated: true, authData: data };
     }
@@ -399,8 +423,8 @@ export const loginWithStrava = async (): Promise<boolean> => {
                       authData.jwt_token ? 'JWT present' : 'JWT missing',
                       authData.stravaId ? 'StravaId present' : 'StravaId missing');
                     
-                    // Check for JWT token or access token
-                    if (authData && (authData.jwt_token || authData.access_token)) {
+                    // Check for JWT token
+                    if (authData && (authData.jwt_token)) {
                       const success = await storeAuthDataDirectly(authData);
                       resolve(success);
                       return;
@@ -449,7 +473,6 @@ export const loginWithStrava = async (): Promise<boolean> => {
 export const logout = async () => {
   try {
     // Clear all auth-related local storage
-    await deleteStorageItem('strava_access_token');
     await deleteStorageItem('jwt_token');
     await deleteStorageItem('strava_id');
     await deleteStorageItem('user_data');
@@ -457,7 +480,6 @@ export const logout = async () => {
     
     // Reset auth state
     authState = {
-      accessToken: null,
       jwtToken: null,
       stravaId: null,
       user: null,
@@ -475,38 +497,46 @@ export const logout = async () => {
 export const storeAuthDataDirectly = async (authData: any): Promise<boolean> => {
   try {
     if (!authData) {
-      console.warn('No auth data provided to store');
+      console.warn("No auth data provided to store");
       return false;
     }
     
-    console.log('Attempting to store auth data:', 
-      authData.jwt_token ? 'JWT present' : 'JWT missing',
-      authData.access_token ? 'Access token present' : 'Access token missing',
-      authData.stravaId ? 'StravaId present' : 'StravaId missing');
+    logAuthData('Storing auth data', authData);
+    
+    // Load current auth state
+    const currentAuthState = await loadAuthState();
     
     // Extract user data from the response format
     const userData = authData.user || null;
     
-    // Store JWT, access token, and Strava ID
+    // Store JWT, and Strava ID - preserve JWT if it's not in the new data
     const newAuthState: AuthState = {
-      accessToken: authData.access_token || null,
-      jwtToken: authData.jwt_token || null,
-      stravaId: authData.stravaId || (userData?.id || null),
-      user: userData,
+      jwtToken: authData.jwt_token || currentAuthState.jwtToken,
+      stravaId: authData.stravaId || (userData?.id || currentAuthState.stravaId),
+      user: userData || currentAuthState.user,
     };
     
-    // Accept either JWT or access token as auth method
-    if (!newAuthState.jwtToken && !newAuthState.accessToken) {
-      console.error('Auth data missing both JWT token and access token');
+    logAuthData('New auth state', newAuthState);
+    
+    // Allow storing just user data even if tokens are missing
+    // This can happen when user data comes directly from API
+    if (authData.stravaId || userData?.id || newAuthState.jwtToken) {
+      await saveAuthState(newAuthState);
+      notifyAuthStateChange(true);
+      return true;
+    }
+    
+    if (!newAuthState.jwtToken) {
+      console.warn("No JWT token available in auth data and none preserved from previous state");
+      console.log("Auth data keys:", Object.keys(authData));
       return false;
     }
     
     await saveAuthState(newAuthState);
-    
     notifyAuthStateChange(true);
     return true;
   } catch (error) {
-    console.error('Error storing auth data:', error);
+    console.error("Error storing auth data directly:", error);
     return false;
   }
 };
@@ -514,29 +544,69 @@ export const storeAuthDataDirectly = async (authData: any): Promise<boolean> => 
 // Process Strava auth response
 export const processStravaAuthResponse = async (authData: any): Promise<boolean> => {
   try {
-    // If we received direct auth data with tokens (JWT or access token)
-    if (authData.jwt_token || authData.access_token) {
+    logAuthData('Processing Strava auth response', authData);
+    
+    // If we received direct auth data with tokens (JWT)
+    if (authData.jwt_token) {
       return await storeAuthDataDirectly(authData);
     }
     
     // If we received an auth code that needs to be exchanged
     if (authData.code) {
+      const requestBody = {
+        code: authData.code,
+        state: authData.state
+      };
+      logAuthData('Sending code exchange request', requestBody);
+      
       const response = await fetchWithCORS(`${API_URL}/api/auth/strava/token`, {
         method: 'POST',
-        body: JSON.stringify({
-          code: authData.code,
-          state: authData.state
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
-        throw new Error('Token exchange failed');
+        const errorText = await response.text();
+        console.error(`Token exchange failed with status ${response.status}:`, errorText);
+        throw new Error(`Token exchange failed: ${response.status}`);
       }
 
-      const tokenData = await response.json();
+      // Log raw response to debug issues with response format
+      const responseText = await response.text();
+      logAuthData('Token exchange raw response', responseText);
+      
+      // Try to parse the response as JSON
+      let tokenData;
+      try {
+        tokenData = JSON.parse(responseText);
+      } catch(e) {
+        console.error('Failed to parse token response as JSON', e);
+        throw new Error('Invalid JSON response from token endpoint');
+      }
+      
+      logAuthData('Token exchange parsed response', tokenData);
+      
+      // If jwt_token is missing but we have it in another field, extract it
+      if (!tokenData.jwt_token) {
+        // Look for token in various possible fields
+        const possibleTokenFields = ['token', 'jwt', 'access_token', 'id_token', 'accessToken', 'jwt_token'];
+        for (const field of possibleTokenFields) {
+          if (tokenData[field]) {
+            console.log(`Found JWT token in field: ${field}`);
+            tokenData.jwt_token = tokenData[field];
+            break;
+          }
+        }
+        
+        // Also check nested response structures
+        if (!tokenData.jwt_token && tokenData.response?.token) {
+          tokenData.jwt_token = tokenData.response.token;
+        }
+      }
+      
       return await storeAuthDataDirectly(tokenData);
     }
 
+    console.warn("Auth data contains neither tokens nor code");
     return false;
   } catch (error) {
     console.error('Error processing Strava auth response:', error);
@@ -594,8 +664,8 @@ export const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     headers: {
       ...options.headers,
       'Authorization': `Bearer ${jwt}`,
-    },
-  };
-  
+
+
+  },  };
   return await fetchWithCORS(url, authOptions);
 };

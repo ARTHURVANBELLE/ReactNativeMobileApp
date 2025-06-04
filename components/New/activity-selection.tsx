@@ -50,22 +50,29 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
   const queryClient = useQueryClient();
   const [activities, setActivities] = useState<StravaActivity[]>([]);
   const [authState, setAuthState] = useState<{
-    accessToken: string | null;
-    refreshToken: string | null;
-    expiresAt: number | null;
+    jwtToken: string | null;
+    stravaId: number | null;
     user: any | null;
   } | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
+  const [shouldRedirect, setShouldRedirect] = useState(false);
 
-  // Load auth state to get Strava token
+  // Load auth state to get JWT token
   useEffect(() => {
     const getAuthState = async () => {
       setIsLoadingAuth(true);
       try {
         const state = await loadAuthState();
+        console.log("Auth state loaded:", state);
         setAuthState(state);
+        
+        // Only redirect if we have neither a JWT token nor a Strava ID
+        if (!state?.jwtToken && !state?.stravaId) {
+          setShouldRedirect(true);
+        }
       } catch (error) {
         console.error("Error loading auth state:", error);
+        setShouldRedirect(true);
       } finally {
         setIsLoadingAuth(false);
       }
@@ -73,31 +80,65 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
 
     getAuthState();
   }, []);
+  
+  // Handle redirect in a separate useEffect to avoid conditional hooks
+  useEffect(() => {
+    if (shouldRedirect && !isLoadingAuth) {
+      router.replace("/");
+    }
+  }, [shouldRedirect, isLoadingAuth, router]);
 
+  // Query Strava activities
   const stravaActivitiesQuery = useQuery({
-    queryKey: ["getStravaActivities", authState?.accessToken],
+    queryKey: ["getStravaActivities", authState?.jwtToken, authState?.stravaId],
     staleTime: Infinity,
     refetchOnWindowFocus: false,
-    enabled: Boolean(authState?.accessToken) && !isLoadingAuth,
+    // Enable the query if either jwtToken or stravaId is available
+    enabled: Boolean(authState?.stravaId || authState?.jwtToken) && !isLoadingAuth,
 
     queryFn: async () => {
-      if (!authState?.accessToken) {
+      if (!authState?.jwtToken && !authState?.stravaId) {
         throw new Error(
-          "Authentication required: No Strava access token available"
+          "Authentication required: No authentication credentials available"
         );
       }
 
       try {
-        // Directly use the Strava API endpoint
-        const endpoint = `${API_URL}/api/strava/activities/get-lasts?count=5`;
+        // Use the API endpoint with stravaId as a parameter
+        let endpoint = `${API_URL}/api/strava/activities/get-lasts?count=5`;
+        
+        // Get the JWT token from the auth state
+        let jwtToken = authState.jwtToken;
+        
+        // If no JWT token in authState, reload fresh auth state to ensure we have latest token
+        if (!jwtToken) {
+          console.log("No JWT token in current state, reloading fresh auth state");
+          const freshAuthState = await loadAuthState();
+          jwtToken = freshAuthState.jwtToken;
+          
+          if (jwtToken) {
+            console.log("JWT token found after reloading auth state");
+          }
+        }
+        
+        const headers: HeadersInit = {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        };
+        
+        // Add JWT token to Authorization header if available
+        if (jwtToken) {
+          headers["Authorization"] = `Bearer ${jwtToken}`;
+          console.log("Added JWT token to Authorization header");
+        } else {
+          console.warn("JWT token not available for API request");
+        }
+        
+        console.log(`Fetching activities with endpoint: ${endpoint}`);
         
         const response = await fetch(endpoint, {
           method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            Authorization: `Bearer ${authState.accessToken}`,
-          },
+          headers: headers,
         });
         
         if (!response.ok) {
@@ -112,7 +153,7 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
       }
     },
   });
-
+  
   // Update activities state when query data changes
   useEffect(() => {
     if (stravaActivitiesQuery.data) {
@@ -171,20 +212,14 @@ const ActivitySelect: React.FC<ActivitySelectProps> = ({
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#FC4C02" />
         <Text style={styles.loadingText}>
-          Checking Strava authentication...
+          Checking authentication...
         </Text>
       </View>
     );
   }
 
-  // If the user isn't connected to Strava, redirect to index
-  if (!authState?.accessToken) {
-    // Redirect to index page
-    useEffect(() => {
-      router.replace("/");
-    }, []);
-    
-    // Show a loading state while redirecting
+  // If the user isn't authenticated and we're redirecting
+  if (shouldRedirect) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#FC4C02" />
@@ -453,8 +488,8 @@ const styles = StyleSheet.create({
   },
   continueButtonText: {
     color: 'white',
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });
-
 export default ActivitySelect;

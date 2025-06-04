@@ -19,17 +19,14 @@ import { getCurrentUser, loadAuthState } from '@/utils/session';
 import { getStorageItem } from '@/utils/storage';
 
 export default function HomeScreen() {
-  const queryClient = useQueryClient();
   const textColor = useThemeColor({ light: '#000000', dark: '#FFFFFF' }, 'text');
   const [sessionData, setSessionData] = useState<{
     user: any | null;
-    accessToken: string | null;
-    refreshToken: string | null;
+    jwtToken: string | null;
     expiresAt: string | null;
   }>({
     user: null,
-    accessToken: null,
-    refreshToken: null,
+    jwtToken: null,
     expiresAt: null,
   });
 
@@ -41,15 +38,12 @@ export default function HomeScreen() {
         const user = await getCurrentUser();
         
         // Load token data directly from storage for display
-        const accessToken = await getStorageItem('strava_access_token');
-        const refreshToken = await getStorageItem('strava_refresh_token');
-        const expiresAt = await getStorageItem('strava_token_expiry');
+        const jwtToken = await getStorageItem('jwt_token');
         
         setSessionData({
           user,
-          accessToken: accessToken ? `${accessToken.substring(0, 10)}...` : null,
-          refreshToken: refreshToken ? `${refreshToken.substring(0, 10)}...` : null,
-          expiresAt: expiresAt ? new Date(Number(expiresAt)).toLocaleString() : null,
+          jwtToken: jwtToken ? `${jwtToken.substring(0, 10)}...` : null,
+          expiresAt: null,
         });
       } catch (error) {
         console.error('Error fetching session data:', error);
@@ -58,33 +52,6 @@ export default function HomeScreen() {
     
     fetchSessionData();
   }, []);
-
-  // Access environment variables through Constants.expoConfig.extra
-  
-  const pokemons = useQuery({
-    queryKey: ['getPokemon'],
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-    
-    queryFn: async () => {
-      const response = await fetch('https://pokeapi.co/api/v2/pokemon');
-      const data = await response.json();
-
-      console.log('data', data);
-      console.log('NODE_ENV:', process.env.NODE_ENV);
-      return data.results as {name: string; url: string}[];
-    }
-  });
-
-  const add = useMutation({
-    mutationFn: async () => {
-      // add pokemon
-    },
-    onSuccess: () => {
-      // invalidate getPokemon query
-      queryClient.invalidateQueries({queryKey: ['getPokemon']});
-    }
-  });
 
   // Sample cycling events data
   const cyclingEvents = [

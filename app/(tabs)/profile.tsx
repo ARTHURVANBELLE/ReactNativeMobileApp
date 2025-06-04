@@ -17,6 +17,7 @@ import { fetchWithCors } from "@/utils/corsHandler";
 import { updateUserProfile } from "@/utils/userApi";
 import TeamSelect, { Team } from "@/components/Profile/TeamSelect";
 import {User as UserSchema} from "@/types/models";
+import Constants from "expo-constants";
 
 // Debug function to log user data changes
 const debugUserData = (label: string, data: any) => {
@@ -25,7 +26,7 @@ const debugUserData = (label: string, data: any) => {
 
 // Function to normalize user data format
 const normalizeUserData = (data: any): UserSchema => {
-  // Handle different response formats
+  // Handle different response formats - data might be the user object directly
   const userData = data.user || data;
   
   if (!userData) {
@@ -34,7 +35,7 @@ const normalizeUserData = (data: any): UserSchema => {
   
   // Ensure all expected fields have appropriate types
   return {
-    stravaId: userData.stravaId || '',
+    stravaId: userData.stravaId || userData.id || '',
     firstName: userData.firstName || '',
     lastName: userData.lastName || '',
     email: userData.email || '',
@@ -66,67 +67,45 @@ export default function ProfileScreen() {
     initUserSession();
   }, []);
 
+  // Update userQuery to handle the response formats correctly
   const userQuery = useQuery({
     queryKey: ["getUser"],
     staleTime: 30000,
     refetchOnWindowFocus: true,
-    enabled: !!userSession?.id, // Only run query when userSession is available
+    enabled: !!userSession?.id || !!userSession?.stravaId, // Run query when any form of ID is available
 
     queryFn: async () => {
-      if (!userSession?.id) {
-        throw new Error("User session not available");
+      // Use either the id or stravaId from the session
+      const userId = userSession?.id || userSession?.stravaId;
+      
+      if (!userId) {
+        throw new Error("User ID not available");
       }
 
-      debugUserData("Fetching user with ID", userSession.id);
-
       try {
+        // Fetch user with proper error handling
         const response = await fetchWithCors(
-          `http://localhost:3000/api/user/by-id?userId=${userSession.id}`
-        );
+          `${Constants.expoConfig?.extra?.REACT_APP_HOST || 'http://localhost:3000'}/api/user/by-id?userId=${userId}`
+        ) as Response;
         
-        // Check if response is a proper Response object
-        if (response && typeof response === 'object' && 'ok' in response) {
+        // If response is a Response object
+        if (response instanceof Response) {
           if (!response.ok) {
-            // Handle error response safely
-            const typedResponse = response as Response;
-            let errorMessage = `API error: ${typedResponse.status}`;
-            try {
-              const errorText = await typedResponse.text();
-              console.error("API error response:", errorText);
-              errorMessage += ` - ${errorText}`;
-            } catch (textError) {
-              console.error("Could not extract error text:", textError);
-            }
-            throw new Error(errorMessage);
+            throw new Error(`API error: ${response.status}`);
           }
-          
-          try {
-            const data = await response;
-            debugUserData("Raw API response", data);
-            
-            // Normalize the user data
-            const normalizedUser = normalizeUserData(data);
-            debugUserData("Normalized user data", normalizedUser);
-            
-            // Update the local state with normalized user data
-            setUser(normalizedUser);
-            return normalizedUser;
-          } catch (jsonError) {
-            console.error("Error parsing JSON response:", jsonError);
-            throw new Error("Invalid response format");
-          }
-        } else {
-          // Handle case where response is not a proper Response object
-          console.error("Invalid response object:", response);
-          if (response && typeof response === 'object') {
-            // If response is already parsed JSON
-            debugUserData("Direct JSON response", response);
-            const normalizedUser = normalizeUserData(response);
-            setUser(normalizedUser);
-            return normalizedUser;
-          }
-          throw new Error("Invalid response type from fetchWithCors");
+          const data = await response.json();
+          const normalizedUser = normalizeUserData(data);
+          setUser(normalizedUser);
+          return normalizedUser;
+        } 
+        // If response is already parsed JSON
+        else if (response && typeof response === 'object') {
+          const normalizedUser = normalizeUserData(response);
+          setUser(normalizedUser);
+          return normalizedUser;
         }
+        
+        throw new Error("Invalid response format");
       } catch (error) {
         console.error("Error fetching user data:", error);
         throw error;
