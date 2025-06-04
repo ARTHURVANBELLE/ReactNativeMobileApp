@@ -39,16 +39,16 @@ const fetchWithCORS = async (url: string, options: RequestInit = {}) => {
 // Authentication state interface
 interface AuthState {
   accessToken: string | null;
-  refreshToken: string | null;
-  expiresAt: number | null;
+  jwtToken: string | null;
+  stravaId: number | null;
   user: any | null;
 }
 
 // Initialize auth state
 let authState: AuthState = {
   accessToken: null,
-  refreshToken: null,
-  expiresAt: null,
+  jwtToken: null,
+  stravaId: null,
   user: null,
 };
 
@@ -75,14 +75,14 @@ const notifyAuthStateChange = (isAuth: boolean) => {
 export const loadAuthState = async (): Promise<AuthState> => {
   try {
     const accessToken = await getStorageItem('strava_access_token');
-    const refreshToken = await getStorageItem('strava_refresh_token');
-    const expiresAt = await getStorageItem('strava_token_expiry');
+    const jwtToken = await getStorageItem('jwt_token');
+    const stravaId = await getStorageItem('strava_id');
     const userJson = await getStorageItem('user_data');
     
     authState = {
       accessToken: accessToken,
-      refreshToken: refreshToken,
-      expiresAt: expiresAt ? Number(expiresAt) : null,
+      jwtToken: jwtToken,
+      stravaId: stravaId ? Number(stravaId) : null,
       user: userJson ? JSON.parse(userJson) : null,
     };
     
@@ -98,100 +98,45 @@ export const saveAuthState = async (state: AuthState) => {
   try {
     if (state.accessToken) {
       await setStorageItem('strava_access_token', state.accessToken);
+    } else {
+      await deleteStorageItem('strava_access_token');
     }
-    if (state.refreshToken) {
-      await setStorageItem('strava_refresh_token', state.refreshToken);
+    
+    if (state.jwtToken) {
+      await setStorageItem('jwt_token', state.jwtToken);
+    } else {
+      await deleteStorageItem('jwt_token');
     }
-    if (state.expiresAt) {
-      await setStorageItem('strava_token_expiry', state.expiresAt.toString());
+    
+    if (state.stravaId) {
+      await setStorageItem('strava_id', String(state.stravaId));
+    } else {
+      await deleteStorageItem('strava_id');
     }
+    
     if (state.user) {
       await setStorageItem('user_data', JSON.stringify(state.user));
+    } else {
+      await deleteStorageItem('user_data');
     }
     
     authState = state;
+    notifyAuthStateChange(!!(state.jwtToken || state.accessToken));
   } catch (error) {
     console.error('Error saving auth state:', error);
   }
 };
 
-// Clear auth state
-export const logout = async () => {
-  try {
-    await deleteStorageItem('strava_access_token');
-    await deleteStorageItem('strava_refresh_token');
-    await deleteStorageItem('strava_token_expiry');
-    await deleteStorageItem('user_data');
-    
-    authState = {
-      accessToken: null,
-      refreshToken: null,
-      expiresAt: null,
-      user: null,
-    };
-    
-    notifyAuthStateChange(false);
-    return true;
-  } catch (error) {
-    console.error('Error during logout:', error);
-    return false;
-  }
-};
-
-// Check if user is logged in and token is valid
+// Check if user is logged in
 export const isAuthenticated = async (): Promise<boolean> => {
   try {
-    if (!authState.accessToken) {
+    if (!authState.jwtToken) {
       await loadAuthState();
     }
     
-    if (!authState.accessToken || !authState.expiresAt) {
-      return false;
-    }
-    
-    // Check if token is expired or about to expire (5 minute buffer)
-    if (authState.expiresAt < Date.now() + 5 * 60 * 1000) {
-      return await refreshAccessToken();
-    }
-    
-    return true;
+    return !!authState.jwtToken;
   } catch (error) {
     console.error('Authentication check failed:', error);
-    return false;
-  }
-};
-
-// Refresh access token using the refresh token
-export const refreshAccessToken = async (): Promise<boolean> => {
-  try {
-    if (!authState.refreshToken) {
-      await loadAuthState();
-      if (!authState.refreshToken) return false;
-    }
-    
-    const response = await fetchWithCORS(`${API_URL}/api/auth/refresh`, {
-      method: 'POST',
-      body: JSON.stringify({
-        refresh_token: authState.refreshToken,
-      }),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Token refresh failed');
-    }
-    
-    const data = await response.json();
-    
-    await saveAuthState({
-      ...authState,
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token || authState.refreshToken,
-      expiresAt: Date.now() + data.expires_in * 1000,
-    });
-    
-    return true;
-  } catch (error) {
-    console.error('Token refresh failed:', error);
     return false;
   }
 };
@@ -269,12 +214,21 @@ export function extractAuthData(url: string): any | null {
     const urlObj = new URL(url);
     const params = new URLSearchParams(urlObj.search);
     
+    // Check for data parameter that contains JSON
+    if (params.has('data')) {
+      try {
+        return JSON.parse(decodeURIComponent(params.get('data') || '{}'));
+      } catch (e) {
+        console.error('Failed to parse data parameter:', e);
+      }
+    }
+    
     // For direct auth data in URL
-    if (params.has('access_token')) {
+    if (params.has('jwt_token') || params.has('access_token')) {
       return {
+        jwt_token: params.get('jwt_token'),
         access_token: params.get('access_token'),
-        refresh_token: params.get('refresh_token'),
-        expires_at: params.get('expires_at'),
+        stravaId: params.has('stravaId') ? Number(params.get('stravaId')) : null,
         user: params.has('user') ? JSON.parse(decodeURIComponent(params.get('user') || '{}')) : null
       };
     }
@@ -289,6 +243,7 @@ export function extractAuthData(url: string): any | null {
     
     return null;
   } catch (error) {
+    console.error('Error extracting auth data:', error);
     return null;
   }
 };
@@ -312,6 +267,8 @@ export const checkAuthStatus = async (sessionId?: string): Promise<{isAuthentica
     if (sessionId) url.searchParams.append('session_id', sessionId);
     url.searchParams.append('_t', Date.now().toString());
     
+    console.log(`Checking auth status with sessionId: ${sessionId || 'none'}`);
+    
     let response;
     try {
       response = await fetch(url.toString(), {
@@ -321,20 +278,25 @@ export const checkAuthStatus = async (sessionId?: string): Promise<{isAuthentica
       });
     } catch (e) {
       // Fallback to fetchWithCORS
+      console.log('Falling back to fetchWithCORS for auth status check');
       response = await fetchWithCORS(url.toString(), { method: 'GET' });
     }
     
     if (!response.ok) {
+      console.warn(`Auth status check failed with status: ${response.status}`);
       return { isAuthenticated: false };
     }
     
     const data = await response.json();
+    console.log('Auth status response:', JSON.stringify(data, null, 2));
     
-    if (data.isAuthenticated && data.access_token) {
+    // Handle the JWT token format from your backend
+    if (data.isAuthenticated) {
+      // Check for different possible response formats
       await storeAuthDataDirectly({
         access_token: data.access_token,
-        refresh_token: data.refresh_token,
-        expires_at: data.expires_at,
+        jwt_token: data.jwt_token,
+        stravaId: data.stravaId,
         user: data.user
       });
       
@@ -343,6 +305,7 @@ export const checkAuthStatus = async (sessionId?: string): Promise<{isAuthentica
     
     return { isAuthenticated: false };
   } catch (error) {
+    console.error('Error checking auth status:', error);
     return { isAuthenticated: false };
   }
 };
@@ -377,8 +340,32 @@ export const loginWithStrava = async (): Promise<boolean> => {
       const authWindow = window.open(authUrlWithSession, 'StravaAuth', features);
       
       if (!authWindow) {
+        console.error('Failed to open auth popup window');
         return false;
       }
+      
+      // Add message event listener to receive auth data directly
+      const messageHandler = async (event: MessageEvent) => {
+        try {
+          console.log('Received message event in parent window');
+          if (event.data && typeof event.data === 'object' && event.data.type === 'strava-auth-complete') {
+            console.log('Received strava-auth-complete message', 
+                      event.data.authData ? 'with auth data' : 'without auth data');
+            
+            if (event.data.authData) {
+              window.removeEventListener('message', messageHandler);
+              const success = await storeAuthDataDirectly(event.data.authData);
+              if (success) {
+                if (!authWindow.closed) authWindow.close();
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Error processing message event:', e);
+        }
+      };
+      
+      window.addEventListener('message', messageHandler);
       
       return new Promise((resolve) => {
         let pollCount = 0;
@@ -408,13 +395,20 @@ export const loginWithStrava = async (): Promise<boolean> => {
                     const authData = JSON.parse(window.localStorage.getItem('strava_auth_data')!);
                     window.localStorage.removeItem('strava_auth_data');
                     
-                    if (authData && authData.access_token) {
+                    console.log('Retrieved auth data from localStorage:', 
+                      authData.jwt_token ? 'JWT present' : 'JWT missing',
+                      authData.stravaId ? 'StravaId present' : 'StravaId missing');
+                    
+                    // Check for JWT token or access token
+                    if (authData && (authData.jwt_token || authData.access_token)) {
                       const success = await storeAuthDataDirectly(authData);
                       resolve(success);
                       return;
                     }
                   }
-                } catch (e) {}
+                } catch (e) {
+                  console.error('Error processing auth data from storage:', e);
+                }
               }
               
               // Fall back to status check
@@ -451,29 +445,68 @@ export const loginWithStrava = async (): Promise<boolean> => {
   }
 };
 
+// Clear auth state
+export const logout = async () => {
+  try {
+    // Clear all auth-related local storage
+    await deleteStorageItem('strava_access_token');
+    await deleteStorageItem('jwt_token');
+    await deleteStorageItem('strava_id');
+    await deleteStorageItem('user_data');
+    await deleteStorageItem('strava_auth_session');
+    
+    // Reset auth state
+    authState = {
+      accessToken: null,
+      jwtToken: null,
+      stravaId: null,
+      user: null,
+    };
+    
+    notifyAuthStateChange(false);
+    return true;
+  } catch (error) {
+    console.error('Error during logout:', error);
+    return false;
+  }
+};
+
 // Store auth data directly
 export const storeAuthDataDirectly = async (authData: any): Promise<boolean> => {
   try {
-    if (!authData || !authData.access_token) {
+    if (!authData) {
+      console.warn('No auth data provided to store');
       return false;
     }
     
-    const expiresAt = authData.expires_at 
-      ? Number(authData.expires_at) * 1000
-      : (Date.now() + 6 * 60 * 60 * 1000);
-      
-    const userData = authData.user || authData.athlete || null;
+    console.log('Attempting to store auth data:', 
+      authData.jwt_token ? 'JWT present' : 'JWT missing',
+      authData.access_token ? 'Access token present' : 'Access token missing',
+      authData.stravaId ? 'StravaId present' : 'StravaId missing');
     
-    await saveAuthState({
-      accessToken: authData.access_token,
-      refreshToken: authData.refresh_token || null,
-      expiresAt: expiresAt,
+    // Extract user data from the response format
+    const userData = authData.user || null;
+    
+    // Store JWT, access token, and Strava ID
+    const newAuthState: AuthState = {
+      accessToken: authData.access_token || null,
+      jwtToken: authData.jwt_token || null,
+      stravaId: authData.stravaId || (userData?.id || null),
       user: userData,
-    });
+    };
+    
+    // Accept either JWT or access token as auth method
+    if (!newAuthState.jwtToken && !newAuthState.accessToken) {
+      console.error('Auth data missing both JWT token and access token');
+      return false;
+    }
+    
+    await saveAuthState(newAuthState);
     
     notifyAuthStateChange(true);
     return true;
   } catch (error) {
+    console.error('Error storing auth data:', error);
     return false;
   }
 };
@@ -481,8 +514,8 @@ export const storeAuthDataDirectly = async (authData: any): Promise<boolean> => 
 // Process Strava auth response
 export const processStravaAuthResponse = async (authData: any): Promise<boolean> => {
   try {
-    // If we received direct auth data with tokens
-    if (authData.access_token) {
+    // If we received direct auth data with tokens (JWT or access token)
+    if (authData.jwt_token || authData.access_token) {
       return await storeAuthDataDirectly(authData);
     }
     
@@ -506,8 +539,30 @@ export const processStravaAuthResponse = async (authData: any): Promise<boolean>
 
     return false;
   } catch (error) {
+    console.error('Error processing Strava auth response:', error);
     return false;
   }
+};
+
+// Get JWT token for API requests
+export const getJwtToken = async (): Promise<string | null> => {
+if (!authState.jwtToken) {
+  await loadAuthState();
+}
+
+if (!authState.jwtToken) {
+  throw new Error('No JWT token available');
+}
+
+return authState.jwtToken;
+};
+
+// Get Strava ID from session
+export const getStravaId = async (): Promise<number | null> => {
+  if (!authState.stravaId) {
+    await loadAuthState();
+  }
+  return authState.stravaId;
 };
 
 // Get current user data
@@ -516,4 +571,31 @@ export const getCurrentUser = async () => {
     await loadAuthState();
   }
   return authState.user;
+};
+
+// Get auth credentials (JWT token and Strava ID)
+export const getAuthCredentials = async (): Promise<{ jwtToken: string | null, stravaId: number | null }> => {
+  if (!authState.jwtToken || !authState.stravaId) {
+    await loadAuthState();
+  }
+  
+  return {
+    jwtToken: authState.jwtToken,
+    stravaId: authState.stravaId
+  };
+};
+
+// Helper function for authenticated API requests using JWT
+export const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
+  const jwt = await getJwtToken();
+  
+  const authOptions: RequestInit = {
+    ...options,
+    headers: {
+      ...options.headers,
+      'Authorization': `Bearer ${jwt}`,
+    },
+  };
+  
+  return await fetchWithCORS(url, authOptions);
 };
